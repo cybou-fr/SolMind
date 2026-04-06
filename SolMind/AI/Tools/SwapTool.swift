@@ -5,16 +5,18 @@ import Foundation
 
 struct SwapTool: Tool {
     let name = "swapTokens"
-    let description = "Swap tokens using Jupiter DEX aggregator on Solana devnet. Provide fromToken and toToken as symbols (e.g. SOL, USDC) or mint addresses, and the amount to swap."
+    let description = "Swap tokens using Jupiter DEX aggregator on Solana devnet. Shows a native confirmation card before executing — never ask the user to type 'confirmed: true' or similar text."
 
     private let walletManager: WalletManager
     private let jupiterService: JupiterService
     private let solanaClient: SolanaClient
+    private let confirmationHandler: TransactionConfirmationHandler
 
-    init(walletManager: WalletManager, jupiterService: JupiterService, solanaClient: SolanaClient) {
+    init(walletManager: WalletManager, jupiterService: JupiterService, solanaClient: SolanaClient, confirmationHandler: TransactionConfirmationHandler) {
         self.walletManager = walletManager
         self.jupiterService = jupiterService
         self.solanaClient = solanaClient
+        self.confirmationHandler = confirmationHandler
     }
 
     @Generable
@@ -25,8 +27,6 @@ struct SwapTool: Tool {
         var toToken: String
         @Guide(description: "Amount to swap in token units")
         var amount: Double
-        @Guide(description: "Set to true only after user confirmed the swap preview")
-        var confirmed: Bool?
     }
 
     func call(arguments: Arguments) async throws -> String {
@@ -53,17 +53,21 @@ struct SwapTool: Tool {
 
         let outDecimals = arguments.toToken.uppercased() == "SOL" ? 9 : 6
         let outAmount = (Double(quote.outAmount) ?? 0) / pow(10.0, Double(outDecimals))
+        let route = quote.routePlan.map { $0.swapInfo.label }.joined(separator: " → ")
 
-        if arguments.confirmed != true {
-            return """
-            ⚠️ DEVNET SWAP PREVIEW:
-            From: \(arguments.amount) \(arguments.fromToken.uppercased())
-            To: ≈\(String(format: "%.6f", outAmount)) \(arguments.toToken.uppercased())
-            Price Impact: \(String(format: "%.2f", quote.priceImpactPct))%
-            Route: \(quote.routePlan.map { $0.swapInfo.label }.joined(separator: " → "))
-            
-            Reply with confirmed: true to confirm the swap.
-            """
+        let preview = TransactionPreview(
+            action: "swap",
+            amount: arguments.amount,
+            tokenSymbol: arguments.fromToken.uppercased(),
+            recipient: "",
+            estimatedFee: 0.000005,
+            summary: "⚠️ DEVNET — Swap \(arguments.amount) \(arguments.fromToken.uppercased()) → ≈\(String(format: "%.6f", outAmount)) \(arguments.toToken.uppercased()) via \(route)"
+        )
+
+        // Show native confirmation card and suspend until user responds.
+        let confirmed = await confirmationHandler.requestConfirmation(preview)
+        guard confirmed else {
+            return "Swap cancelled by user."
         }
 
         // Execute swap

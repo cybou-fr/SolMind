@@ -11,15 +11,20 @@ import SwiftUI
 struct SolMindApp: App {
     @State private var walletViewModel = WalletViewModel()
     @State private var chatViewModel = ChatViewModel()
+    @State private var confirmationHandler = TransactionConfirmationHandler()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(walletViewModel)
                 .environment(chatViewModel)
+                .environment(confirmationHandler)
                 .task {
                     // Wire AI tools once wallet is available
-                    chatViewModel.setupAI(walletManager: walletViewModel.walletManager)
+                    chatViewModel.setupAI(
+                        walletManager: walletViewModel.walletManager,
+                        confirmationHandler: confirmationHandler
+                    )
                 }
         }
 #if os(macOS)

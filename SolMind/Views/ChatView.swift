@@ -5,6 +5,7 @@ import SwiftUI
 struct ChatView: View {
     @Environment(ChatViewModel.self) private var chatViewModel
     @Environment(WalletViewModel.self) private var walletViewModel
+    @Environment(TransactionConfirmationHandler.self) private var confirmationHandler
     @State private var scrollProxy: ScrollViewProxy?
 
     var body: some View {
@@ -72,6 +73,20 @@ struct ChatView: View {
             .background(.bar)
         }
 #endif
+        // Native transaction confirmation card — slides up when a Tool is waiting for confirmation.
+        .overlay(alignment: .bottom) {
+            if let preview = confirmationHandler.pendingPreview {
+                TransactionPreviewCard(
+                    preview: preview,
+                    onConfirm: { confirmationHandler.confirm() },
+                    onCancel: { confirmationHandler.cancel() }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.3), value: confirmationHandler.pendingPreview != nil)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 DevnetBadge()

@@ -43,15 +43,15 @@ class ChatViewModel {
 
     // MARK: - AI Setup
 
-    func setupAI(walletManager: WalletManager) {
+    func setupAI(walletManager: WalletManager, confirmationHandler: TransactionConfirmationHandler) {
         let jupiterService = JupiterService()
         let heliusService = HeliusService()
         let tools: [any Tool] = [
             BalanceTool(walletManager: walletManager, solanaClient: solanaClient),
             FaucetTool(walletManager: walletManager, solanaClient: solanaClient),
-            SendTool(walletManager: walletManager, solanaClient: solanaClient),
+            SendTool(walletManager: walletManager, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             PriceTool(),
-            SwapTool(walletManager: walletManager, jupiterService: jupiterService, solanaClient: solanaClient),
+            SwapTool(walletManager: walletManager, jupiterService: jupiterService, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             NFTTool(walletManager: walletManager, heliusService: heliusService),
             TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
             OnRampTool(walletManager: walletManager)

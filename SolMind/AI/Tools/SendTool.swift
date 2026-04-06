@@ -5,26 +5,26 @@ import Foundation
 
 struct SendTool: Tool {
     let name = "sendTokens"
-    let description = "Send SOL or SPL tokens to a recipient address. Returns a transaction preview for user confirmation BEFORE executing. Always call this tool when the user wants to send/transfer tokens."
+    let description = "Send SOL or SPL tokens to a recipient address. Shows a native confirmation card before executing — never ask the user to type 'confirmed: true' or similar text."
 
     private let walletManager: WalletManager
     private let solanaClient: SolanaClient
+    private let confirmationHandler: TransactionConfirmationHandler
 
-    init(walletManager: WalletManager, solanaClient: SolanaClient) {
+    init(walletManager: WalletManager, solanaClient: SolanaClient, confirmationHandler: TransactionConfirmationHandler) {
         self.walletManager = walletManager
         self.solanaClient = solanaClient
+        self.confirmationHandler = confirmationHandler
     }
 
     @Generable
     struct Arguments {
-        @Guide(description: "Recipient Solana base58 address")
+        @Guide(description: "Recipient Solana base58 address (must be 32-byte base58, not a domain)")
         var recipient: String
         @Guide(description: "Amount to send in token units (e.g. 0.5 for 0.5 SOL)")
         var amount: Double
-        @Guide(description: "Optional SPL token mint address. Omit to send SOL.")
+        @Guide(description: "Optional SPL token mint address. Omit to send native SOL.")
         var tokenMint: String?
-        @Guide(description: "Set to true only after user has confirmed the transaction preview")
-        var confirmed: Bool?
     }
 
     func call(arguments: Arguments) async throws -> String {
@@ -33,28 +33,30 @@ struct SendTool: Tool {
         }
 
         guard Base58.isValidAddress(arguments.recipient) else {
-            return "Invalid recipient address: '\(arguments.recipient)'. Please provide a valid Solana base58 address."
+            return "Invalid recipient address '\(arguments.recipient)'. Please provide a valid Solana base58 address (44 characters, no domains)."
         }
 
         guard arguments.amount > 0 else {
             return "Amount must be greater than 0."
         }
 
-        if arguments.confirmed != true {
-            let fee = 0.000005
-            let preview = """
-            ⚠️ DEVNET TRANSACTION PREVIEW:
-            Action: Send
-            Amount: \(arguments.amount) \(arguments.tokenMint != nil ? "tokens (mint: \(arguments.tokenMint!))" : "SOL")
-            To: \(arguments.recipient)
-            Estimated fee: \(fee) SOL
-            
-            Reply with confirmed: true to execute, or decline.
-            """
-            return preview
+        let tokenSymbol = arguments.tokenMint == nil ? "SOL" : "tokens"
+        let preview = TransactionPreview(
+            action: "send",
+            amount: arguments.amount,
+            tokenSymbol: tokenSymbol,
+            recipient: arguments.recipient,
+            estimatedFee: 0.000005,
+            summary: "⚠️ DEVNET — Send \(arguments.amount) \(tokenSymbol) to \(arguments.recipient.prefix(8))…\(arguments.recipient.suffix(4))"
+        )
+
+        // Show native confirmation card and suspend until user responds.
+        let confirmed = await confirmationHandler.requestConfirmation(preview)
+        guard confirmed else {
+            return "Transaction cancelled by user."
         }
 
-        // Execute after confirmation
+        // Build and sign with a fresh blockhash (fetched AFTER confirmation so it doesn't expire).
         do {
             let lamports = UInt64(arguments.amount * 1_000_000_000)
             let keypair = try walletManager.keypairForSigning()
@@ -69,8 +71,6 @@ struct SendTool: Tool {
 
             let signature = try await solanaClient.sendTransaction(serialized: txData)
 
-            // Sanity-check the signature before reporting success.
-            // A real Solana signature is a base58 string of 87–88 characters.
             guard signature.count >= 80, Base58.decode(signature) != nil else {
                 return "⚠️ DEVNET: sendTransaction returned an unexpected response. The transaction may not have been submitted. Check the explorer manually."
             }
@@ -85,3 +85,4 @@ struct SendTool: Tool {
         }
     }
 }
+
