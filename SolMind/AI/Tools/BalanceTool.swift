@@ -30,12 +30,23 @@ struct BalanceTool: Tool {
             if let mint = arguments.tokenMint, !mint.isEmpty {
                 let accounts = try await solanaClient.getTokenAccounts(owner: publicKey)
                 if let account = accounts.first(where: { $0.mint == mint }) {
-                    return "Token balance (\(mint)): \(account.displayAmount) [DEVNET]"
+                    return "Token balance for mint \(mint): \(account.displayAmount) [DEVNET]"
                 }
-                return "No token account found for mint \(mint) on devnet."
+                // Also fetch SOL so the model has full context
+                let sol = try await solanaClient.getSOLBalance(publicKey: publicKey)
+                return "No token account found for mint \(mint) on devnet. Current SOL balance: \(String(format: "%.6f", sol)) SOL. The wallet may not have received this token yet — use the faucet to get SOL first, then acquire tokens via swap."
             } else {
                 let balance = try await solanaClient.getSOLBalance(publicKey: publicKey)
-                return String(format: "SOL balance: %.9f SOL [DEVNET] (Address: %@)", balance, publicKey)
+                let tokenAccounts = try await solanaClient.getTokenAccounts(owner: publicKey)
+                var result = String(format: "SOL balance: %.9f SOL [DEVNET] | Address: %@", balance, publicKey)
+                if balance == 0 {
+                    result += " | EMPTY WALLET: Call getFromFaucet tool now to fund this wallet with devnet SOL."
+                }
+                if !tokenAccounts.isEmpty {
+                    let tokenSummary = tokenAccounts.map { "\($0.mint.prefix(8))…: \($0.displayAmount)" }.joined(separator: ", ")
+                    result += " | SPL tokens: \(tokenSummary)"
+                }
+                return result
             }
         } catch {
             return "Failed to fetch balance: \(error.localizedDescription)"

@@ -57,12 +57,18 @@ class ChatViewModel {
         let msgIndex = (activeConversation?.messages.count ?? 1) - 1
 
         do {
-            var fullResponse = ""
-            for try await chunk in aiSession.stream(trimmed) {
-                fullResponse += chunk
-                activeConversation?.messages[msgIndex].content = fullResponse
-            }
+            var fullResponse = try await streamWithRecovery(trimmed)
+            activeConversation?.messages[msgIndex].content = fullResponse
             activeConversation?.messages[msgIndex].isStreaming = false
+
+            // Security: block any response that attempts to solicit sensitive credentials
+            if isSuspiciousResponse(fullResponse) {
+                activeConversation?.messages[msgIndex].content = """
+                ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
+
+                SolMind will NEVER ask for your private key. If you see such a request, it is a scam attempt. Your wallet is managed securely on-device.
+                """
+            }
 
             // Auto-title conversation from first message
             if activeConversation?.messages.count == 2,
@@ -87,6 +93,7 @@ class ChatViewModel {
         let convo = Conversation()
         conversations.insert(convo, at: 0)
         activeConversation = convo
+        aiSession.reset() // fresh context window for each conversation
     }
 
     func deleteConversation(_ convo: Conversation) {
@@ -94,5 +101,45 @@ class ChatViewModel {
         if activeConversation?.id == convo.id {
             activeConversation = conversations.first
         }
+    }
+
+    // MARK: - Streaming with context-window recovery
+
+    /// Streams a response; if the session hits a GenerationError (context overflow),
+    /// resets the session and retries once with just the current message.
+    private func streamWithRecovery(_ prompt: String) async throws -> String {
+        do {
+            return try await collectStream(prompt)
+        } catch {
+            let isGenerationError = error.localizedDescription.contains("GenerationError") ||
+                                    error.localizedDescription.contains("error -1")
+            if isGenerationError {
+                aiSession.reset()
+                return try await collectStream(prompt)
+            }
+            throw error
+        }
+    }
+
+    private func collectStream(_ prompt: String) async throws -> String {
+        var result = ""
+        for try await chunk in aiSession.stream(prompt) {
+            // partial.content is the full accumulated text so far — replace, don't append
+            result = chunk
+        }
+        return result
+    }
+
+    // MARK: - Security
+
+    private func isSuspiciousResponse(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let privateKeyPhrases = [
+            "private key", "seed phrase", "mnemonic", "secret key",
+            "clé privée", "phrase secrète",  // French variants
+            "provide your", "share your key", "enter your key",
+            "including your private", "wallet secret"
+        ]
+        return privateKeyPhrases.contains { lower.contains($0) }
     }
 }

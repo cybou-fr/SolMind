@@ -5,18 +5,29 @@ import FoundationModels
 @Observable
 class AISession {
     private var session: LanguageModelSession?
+    private var tools: [any Tool] = []
     private(set) var isAvailable = false
 
     // MARK: - Initialization
 
     func initialize(tools: [any Tool] = []) {
+        self.tools = tools
+        createSession()
+        isAvailable = true
+    }
+
+    /// Tear down and recreate the session (clears transcript / context window)
+    func reset() {
+        createSession()
+    }
+
+    private func createSession() {
         let instructions = Instructions(AIInstructions.system)
         if tools.isEmpty {
             session = LanguageModelSession(instructions: instructions)
         } else {
             session = LanguageModelSession(tools: tools, instructions: instructions)
         }
-        isAvailable = true
     }
 
     // MARK: - Single Response
