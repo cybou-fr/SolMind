@@ -15,12 +15,11 @@ actor SolanaClient {
     // MARK: - getBalance
 
     func getBalance(publicKey: String) async throws -> UInt64 {
-        let result: RPCResponse<BalanceResult> = try await rpcCall(
-            method: "getBalance",
-            params: [publicKey, ["commitment": "confirmed"]]
-        )
-        guard let value = result.result?.value else {
-            throw result.error ?? RPCError(code: -1, message: "Empty balance response")
+        let data = try await postRPC(method: "getBalance",
+                                    params: [publicKey, ["commitment": "confirmed"]])
+        let decoded = try JSONDecoder().decode(RPCResponse<BalanceResult>.self, from: data)
+        guard let value = decoded.result?.value else {
+            throw decoded.error ?? RPCError(code: -1, message: "Empty balance response")
         }
         return value
     }
@@ -70,12 +69,11 @@ actor SolanaClient {
     // MARK: - requestAirdrop (devnet faucet)
 
     func requestAirdrop(to publicKey: String, lamports: UInt64) async throws -> String {
-        let result: RPCResponse<String> = try await rpcCall(
-            method: "requestAirdrop",
-            params: [publicKey, lamports, ["commitment": "confirmed"]]
-        )
-        guard let signature = result.result else {
-            throw result.error ?? RPCError(code: -1, message: "Airdrop failed")
+        let data = try await postRPC(method: "requestAirdrop",
+                                    params: [publicKey, lamports, ["commitment": "confirmed"]])
+        let decoded = try JSONDecoder().decode(RPCResponse<String>.self, from: data)
+        guard let signature = decoded.result else {
+            throw decoded.error ?? RPCError(code: -1, message: "Airdrop failed")
         }
         return signature
     }
@@ -83,12 +81,11 @@ actor SolanaClient {
     // MARK: - getLatestBlockhash
 
     func getLatestBlockhash() async throws -> String {
-        let result: RPCResponse<BlockhashResponse> = try await rpcCall(
-            method: "getLatestBlockhash",
-            params: [["commitment": "confirmed"]]
-        )
-        guard let blockhash = result.result?.value.blockhash else {
-            throw result.error ?? RPCError(code: -1, message: "Could not fetch blockhash")
+        let data = try await postRPC(method: "getLatestBlockhash",
+                                    params: [["commitment": "confirmed"]])
+        let decoded = try JSONDecoder().decode(RPCResponse<BlockhashResponse>.self, from: data)
+        guard let blockhash = decoded.result?.value.blockhash else {
+            throw decoded.error ?? RPCError(code: -1, message: "Could not fetch blockhash")
         }
         return blockhash
     }
@@ -97,12 +94,11 @@ actor SolanaClient {
 
     func sendTransaction(serialized: Data) async throws -> String {
         let base64Tx = serialized.base64EncodedString()
-        let result: RPCResponse<String> = try await rpcCall(
-            method: "sendTransaction",
-            params: [base64Tx, ["encoding": "base64", "preflightCommitment": "confirmed"]]
-        )
-        guard let signature = result.result else {
-            throw result.error ?? RPCError(code: -1, message: "sendTransaction failed")
+        let data = try await postRPC(method: "sendTransaction",
+                                    params: [base64Tx, ["encoding": "base64", "preflightCommitment": "confirmed"]])
+        let decoded = try JSONDecoder().decode(RPCResponse<String>.self, from: data)
+        guard let signature = decoded.result else {
+            throw decoded.error ?? RPCError(code: -1, message: "sendTransaction failed")
         }
         return signature
     }
@@ -110,27 +106,25 @@ actor SolanaClient {
     // MARK: - getSignaturesForAddress
 
     func getSignaturesForAddress(publicKey: String, limit: Int = 10) async throws -> [SignatureInfo] {
-        let result: RPCResponse<[SignatureInfo]> = try await rpcCall(
-            method: "getSignaturesForAddress",
-            params: [publicKey, ["limit": limit, "commitment": "confirmed"]]
-        )
-        return result.result ?? []
+        let data = try await postRPC(method: "getSignaturesForAddress",
+                                    params: [publicKey, ["limit": limit, "commitment": "confirmed"]])
+        let decoded = try JSONDecoder().decode(RPCResponse<[SignatureInfo]>.self, from: data)
+        return decoded.result ?? []
     }
 
     // MARK: - confirmTransaction (poll)
 
     func confirmTransaction(signature: String, maxAttempts: Int = 20) async throws -> Bool {
         for _ in 0..<maxAttempts {
-            let result: RPCResponse<[SignatureStatus?]> = try await rpcCall(
-                method: "getSignatureStatuses",
-                params: [[signature], ["searchTransactionHistory": false]]
-            )
-            if let statuses = result.result, let status = statuses.first ?? nil {
+            let data = try await postRPC(method: "getSignatureStatuses",
+                                        params: [[signature], ["searchTransactionHistory": false]])
+            let decoded = try JSONDecoder().decode(RPCResponse<[SignatureStatus?]>.self, from: data)
+            if let statuses = decoded.result, let status = statuses.first ?? nil {
                 if status.confirmationStatus == "confirmed" || status.confirmationStatus == "finalized" {
                     return status.err == nil
                 }
             }
-            try await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s
+            try await Task.sleep(nanoseconds: 1_500_000_000)
         }
         return false
     }
@@ -142,19 +136,14 @@ actor SolanaClient {
         return requestID
     }
 
-    private func rpcCall<T: Decodable>(method: String, params: some Encodable) async throws -> RPCResponse<T> {
-        let request = RPCRequest(id: nextID(), method: method, params: params)
-        let body = try JSONEncoder().encode(request)
-        var urlRequest = URLRequest(url: rpcURL)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = body
-        let (data, response) = try await urlSession.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw RPCError(code: -32000, message: "HTTP error")
-        }
-        return try JSONDecoder().decode(RPCResponse<T>.self, from: data)
+    private func postRPC(method: String, params: [Any]) async throws -> Data {
+        let body: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": nextID(),
+            "method": method,
+            "params": params
+        ]
+        return try await postRaw(body: body)
     }
 
     private func postRaw(body: [String: Any]) async throws -> Data {

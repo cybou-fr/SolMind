@@ -1,5 +1,10 @@
 import FoundationModels
 import Foundation
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 // MARK: - On-Ramp Tool (MoonPay Sandbox)
 
@@ -24,7 +29,7 @@ struct OnRampTool: Tool {
     @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
-            return ToolOutput("Wallet not connected.")
+            return "Wallet not connected."
         }
 
         // Build MoonPay sandbox URL

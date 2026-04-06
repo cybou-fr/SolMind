@@ -22,15 +22,3 @@ struct TransactionPreview {
     @Guide(description: "One-sentence human-readable summary of this transaction")
     var summary: String
 }
-
-// Manual initializer for SwiftUI Previews (supplements @Generable macro)
-extension TransactionPreview {
-    init(action: String, amount: Double, tokenSymbol: String, recipient: String, estimatedFee: Double, summary: String) {
-        self.action = action
-        self.amount = amount
-        self.tokenSymbol = tokenSymbol
-        self.recipient = recipient
-        self.estimatedFee = estimatedFee
-        self.summary = summary
-    }
-}

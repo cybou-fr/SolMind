@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 
 // MARK: - Chat ViewModel
 
@@ -24,13 +25,15 @@ class ChatViewModel {
     // MARK: - AI Setup
 
     func setupAI(walletManager: WalletManager) {
+        let jupiterService = JupiterService()
+        let heliusService = HeliusService()
         let tools: [any Tool] = [
             BalanceTool(walletManager: walletManager, solanaClient: solanaClient),
             FaucetTool(walletManager: walletManager, solanaClient: solanaClient),
             SendTool(walletManager: walletManager, solanaClient: solanaClient),
             PriceTool(),
-            SwapTool(walletManager: walletManager, solanaClient: solanaClient),
-            NFTTool(walletManager: walletManager),
+            SwapTool(walletManager: walletManager, jupiterService: jupiterService, solanaClient: solanaClient),
+            NFTTool(walletManager: walletManager, heliusService: heliusService),
             TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
             OnRampTool(walletManager: walletManager)
         ]

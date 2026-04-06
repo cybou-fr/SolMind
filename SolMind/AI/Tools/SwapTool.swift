@@ -53,7 +53,7 @@ struct SwapTool: Tool {
         }
 
         let outDecimals = arguments.toToken.uppercased() == "SOL" ? 9 : 6
-        let outAmount = Double(quote.outAmount) / pow(10.0, Double(outDecimals))
+        let outAmount = (Double(quote.outAmount) ?? 0) / pow(10.0, Double(outDecimals))
 
         if arguments.confirmed != true {
             return """

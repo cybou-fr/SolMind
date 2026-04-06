@@ -24,10 +24,10 @@ struct TransactionHistoryTool: Tool {
     @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
-            return ToolOutput("Wallet not connected.")
+            return "Wallet not connected."
         }
 
-        let limit = min(input.limit ?? 5, 20)
+        let limit = min(arguments.limit ?? 5, 20)
         let signatures = try await solanaClient.getSignaturesForAddress(publicKey: publicKey, limit: limit)
 
         if signatures.isEmpty {

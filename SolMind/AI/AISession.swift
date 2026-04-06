@@ -1,3 +1,5 @@
+import Foundation
+import Observation
 import FoundationModels
 
 @Observable
@@ -8,7 +10,7 @@ class AISession {
     // MARK: - Initialization
 
     func initialize(tools: [any Tool] = []) {
-        let instructions = LanguageModelSession.Instructions(AIInstructions.system)
+        let instructions = Instructions(AIInstructions.system)
         if tools.isEmpty {
             session = LanguageModelSession(instructions: instructions)
         } else {
