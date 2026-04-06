@@ -17,6 +17,10 @@ struct SolMindApp: App {
             ContentView()
                 .environment(walletViewModel)
                 .environment(chatViewModel)
+                .task {
+                    // Wire AI tools once wallet is available
+                    chatViewModel.setupAI(walletManager: walletViewModel.walletManager)
+                }
         }
 #if os(macOS)
         .windowStyle(.titleBar)

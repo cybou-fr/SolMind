@@ -13,15 +13,17 @@ struct PriceTool: Tool {
         self.priceService = priceService
     }
 
-    struct Input: Codable {
+    @Generable
+    struct Arguments {
+        @Guide(description: "Token symbol (e.g. SOL, USDC, BTC) or mint address")
         var tokenSymbol: String
     }
 
-    func call(input: Input) async throws -> ToolOutput {
-        let price = try await priceService.getPrice(symbol: input.tokenSymbol)
+    func call(arguments: Arguments) async throws -> String {
+        let price = try await priceService.getPrice(symbol: arguments.tokenSymbol)
         if let p = price {
-            return ToolOutput("Current price of \(input.tokenSymbol.uppercased()): $\(String(format: "%.4f", p)) USD")
+            return "Current price of \(arguments.tokenSymbol.uppercased()): $\(String(format: "%.4f", p)) USD"
         }
-        return ToolOutput("Could not fetch price for \(input.tokenSymbol). Try with a different symbol.")
+        return "Could not fetch price for \(arguments.tokenSymbol). Try with a different symbol."
     }
 }

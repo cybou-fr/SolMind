@@ -7,9 +7,13 @@ class AISession {
 
     // MARK: - Initialization
 
-    func initialize(tools: [any ToolProtocol] = []) {
-        let instructions = LanguageModelSession.Instructions(systemPrompt: AIInstructions.system)
-        session = LanguageModelSession(instructions: instructions)
+    func initialize(tools: [any Tool] = []) {
+        let instructions = LanguageModelSession.Instructions(AIInstructions.system)
+        if tools.isEmpty {
+            session = LanguageModelSession(instructions: instructions)
+        } else {
+            session = LanguageModelSession(tools: tools, instructions: instructions)
+        }
         isAvailable = true
     }
 
@@ -17,7 +21,7 @@ class AISession {
 
     func send(_ prompt: String) async throws -> String {
         guard let session else { throw AIError.notInitialized }
-        let response = try await session.respond(to: Prompt(prompt))
+        let response = try await session.respond(to: prompt)
         return response.content
     }
 
@@ -31,9 +35,8 @@ class AISession {
             }
             Task {
                 do {
-                    let stream = session.streamResponse(to: Prompt(prompt))
-                    for try await chunk in stream {
-                        continuation.yield(chunk)
+                    for try await partial in session.streamResponse(to: prompt) {
+                        continuation.yield(partial.content)
                     }
                     continuation.finish()
                 } catch {
@@ -43,9 +46,6 @@ class AISession {
         }
     }
 }
-
-// MARK: - Placeholder protocol for tools (replaced with FoundationModels.Tool in Phase 3)
-protocol ToolProtocol {}
 
 // MARK: - Errors
 
