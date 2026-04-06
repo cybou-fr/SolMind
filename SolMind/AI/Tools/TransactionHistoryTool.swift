@@ -7,7 +7,7 @@ struct TransactionHistoryTool: Tool {
     let name = "getTransactionHistory"
     let description = "Get recent transaction history for the connected wallet."
 
-    @MainActor private let walletManager: WalletManager
+    private let walletManager: WalletManager
     private let solanaClient: SolanaClient
 
     init(walletManager: WalletManager, solanaClient: SolanaClient) {
@@ -21,31 +21,34 @@ struct TransactionHistoryTool: Tool {
         var limit: Int?
     }
 
-    @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
         }
 
         let limit = min(arguments.limit ?? 5, 20)
-        let signatures = try await solanaClient.getSignaturesForAddress(publicKey: publicKey, limit: limit)
+        do {
+            let signatures = try await solanaClient.getSignaturesForAddress(publicKey: publicKey, limit: limit)
 
-        if signatures.isEmpty {
-            return "No transactions found for your devnet wallet."
-        }
-
-        let lines = signatures.map { sig -> String in
-            let status = sig.err == nil ? "✅" : "❌"
-            let dateStr: String
-            if let bt = sig.blockTime {
-                let date = Date(timeIntervalSince1970: TimeInterval(bt))
-                dateStr = date.formatted(.relative(presentation: .named))
-            } else {
-                dateStr = "unknown time"
+            if signatures.isEmpty {
+                return "No transactions found for your devnet wallet."
             }
-            return "\(status) \(sig.signature.prefix(8))… — \(dateStr)"
-        }.joined(separator: "\n")
 
-        return "Recent transactions (\(signatures.count)):\n\(lines)"
+            let lines = signatures.map { sig -> String in
+                let status = sig.err == nil ? "✅" : "❌"
+                let dateStr: String
+                if let bt = sig.blockTime {
+                    let date = Date(timeIntervalSince1970: TimeInterval(bt))
+                    dateStr = date.formatted(.relative(presentation: .named))
+                } else {
+                    dateStr = "unknown time"
+                }
+                return "\(status) \(sig.signature.prefix(8))… — \(dateStr)"
+            }.joined(separator: "\n")
+
+            return "Recent transactions (\(signatures.count)):\n\(lines)"
+        } catch {
+            return "Could not fetch transaction history: \(error.localizedDescription)"
+        }
     }
 }

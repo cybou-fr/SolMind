@@ -12,7 +12,7 @@ struct OnRampTool: Tool {
     let name = "buyWithFiat"
     let description = "Open the MoonPay widget to buy SOL with fiat currency (USD, EUR, etc.) via credit card. This is a sandbox demo — use test card 4242 4242 4242 4242."
 
-    @MainActor private let walletManager: WalletManager
+    private let walletManager: WalletManager
 
     init(walletManager: WalletManager) {
         self.walletManager = walletManager
@@ -26,7 +26,6 @@ struct OnRampTool: Tool {
         var currency: String?
     }
 
-    @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
@@ -60,7 +59,6 @@ struct OnRampTool: Tool {
         """
     }
 
-    @MainActor
     private func openURL(_ url: URL) {
 #if os(macOS)
         NSWorkspace.shared.open(url)

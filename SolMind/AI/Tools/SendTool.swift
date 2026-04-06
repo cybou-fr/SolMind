@@ -7,7 +7,7 @@ struct SendTool: Tool {
     let name = "sendTokens"
     let description = "Send SOL or SPL tokens to a recipient address. Returns a transaction preview for user confirmation BEFORE executing. Always call this tool when the user wants to send/transfer tokens."
 
-    @MainActor private let walletManager: WalletManager
+    private let walletManager: WalletManager
     private let solanaClient: SolanaClient
 
     init(walletManager: WalletManager, solanaClient: SolanaClient) {
@@ -27,7 +27,6 @@ struct SendTool: Tool {
         var confirmed: Bool?
     }
 
-    @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard walletManager.isConnected else {
             return "Wallet not connected."
@@ -56,22 +55,26 @@ struct SendTool: Tool {
         }
 
         // Execute after confirmation
-        let lamports = UInt64(arguments.amount * 1_000_000_000)
-        let keypair = try walletManager.keypairForSigning()
-        let blockhash = try await solanaClient.getLatestBlockhash()
+        do {
+            let lamports = UInt64(arguments.amount * 1_000_000_000)
+            let keypair = try walletManager.keypairForSigning()
+            let blockhash = try await solanaClient.getLatestBlockhash()
 
-        let txData = try TransactionBuilder.buildSOLTransfer(
-            from: keypair,
-            to: arguments.recipient,
-            lamports: lamports,
-            recentBlockhash: blockhash
-        )
+            let txData = try TransactionBuilder.buildSOLTransfer(
+                from: keypair,
+                to: arguments.recipient,
+                lamports: lamports,
+                recentBlockhash: blockhash
+            )
 
-        let signature = try await solanaClient.sendTransaction(serialized: txData)
-        return """
-        ✅ DEVNET: Transaction sent!
-        Signature: \(signature)
-        Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
-        """
+            let signature = try await solanaClient.sendTransaction(serialized: txData)
+            return """
+            ✅ DEVNET: Transaction sent!
+            Signature: \(signature)
+            Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
+            """
+        } catch {
+            return "Transaction failed: \(error.localizedDescription)"
+        }
     }
 }

@@ -7,7 +7,7 @@ struct SwapTool: Tool {
     let name = "swapTokens"
     let description = "Swap tokens using Jupiter DEX aggregator on Solana devnet. Provide fromToken and toToken as symbols (e.g. SOL, USDC) or mint addresses, and the amount to swap."
 
-    @MainActor private let walletManager: WalletManager
+    private let walletManager: WalletManager
     private let jupiterService: JupiterService
     private let solanaClient: SolanaClient
 
@@ -29,7 +29,6 @@ struct SwapTool: Tool {
         var confirmed: Bool?
     }
 
-    @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard walletManager.isConnected else {
             return "Wallet not connected."
@@ -71,12 +70,16 @@ struct SwapTool: Tool {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
         }
-        let swapData = try await jupiterService.getSwapTransaction(quote: quote, userPublicKey: publicKey)
-        let signature = try await solanaClient.sendTransaction(serialized: swapData)
-        return """
-        ✅ DEVNET: Swap executed!
-        Signature: \(signature)
-        Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
-        """
+        do {
+            let swapData = try await jupiterService.getSwapTransaction(quote: quote, userPublicKey: publicKey)
+            let signature = try await solanaClient.sendTransaction(serialized: swapData)
+            return """
+            ✅ DEVNET: Swap executed!
+            Signature: \(signature)
+            Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
+            """
+        } catch {
+            return "Swap execution failed: \(error.localizedDescription)"
+        }
     }
 }

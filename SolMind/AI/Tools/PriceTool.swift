@@ -20,10 +20,14 @@ struct PriceTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let price = try await priceService.getPrice(symbol: arguments.tokenSymbol)
-        if let p = price {
-            return "Current price of \(arguments.tokenSymbol.uppercased()): $\(String(format: "%.4f", p)) USD"
+        do {
+            let price = try await priceService.getPrice(symbol: arguments.tokenSymbol)
+            if let p = price {
+                return "Current price of \(arguments.tokenSymbol.uppercased()): $\(String(format: "%.4f", p)) USD"
+            }
+            return "Could not fetch price for \(arguments.tokenSymbol). Try with a different symbol."
+        } catch {
+            return "Price lookup failed: \(error.localizedDescription)"
         }
-        return "Could not fetch price for \(arguments.tokenSymbol). Try with a different symbol."
     }
 }

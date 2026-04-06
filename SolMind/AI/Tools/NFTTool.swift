@@ -7,7 +7,7 @@ struct NFTTool: Tool {
     let name = "getNFTs"
     let description = "Get the list of NFTs owned by the connected wallet using Helius DAS API."
 
-    @MainActor private let walletManager: WalletManager
+    private let walletManager: WalletManager
     private let heliusService: HeliusService
 
     init(walletManager: WalletManager, heliusService: HeliusService) {
@@ -18,22 +18,25 @@ struct NFTTool: Tool {
     @Generable
     struct Arguments {}
 
-    @MainActor
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
         }
 
-        let nfts = try await heliusService.getAssetsByOwner(owner: publicKey)
+        do {
+            let nfts = try await heliusService.getAssetsByOwner(owner: publicKey)
 
-        if nfts.isEmpty {
-            return "No NFTs found in your devnet wallet (\(publicKey)). Try minting some on devnet first."
+            if nfts.isEmpty {
+                return "No NFTs found in your devnet wallet (\(publicKey)). Try minting some on devnet first."
+            }
+
+            let list = nfts.prefix(20).map { nft in
+                "• \(nft.name) (\(nft.collectionName ?? "No collection"))"
+            }.joined(separator: "\n")
+
+            return "Your NFTs on devnet (\(nfts.count) total):\n\(list)"
+        } catch {
+            return "Could not fetch NFTs: \(error.localizedDescription)"
         }
-
-        let list = nfts.prefix(20).map { nft in
-            "• \(nft.name) (\(nft.collectionName ?? "No collection"))"
-        }.joined(separator: "\n")
-
-        return "Your NFTs on devnet (\(nfts.count) total):\n\(list)"
     }
 }
