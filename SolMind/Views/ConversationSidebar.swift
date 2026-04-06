@@ -1,16 +1,39 @@
 import SwiftUI
 
-// MARK: - macOS Conversation Sidebar
+// MARK: - macOS / visionOS Conversation Sidebar
 
 struct ConversationSidebar: View {
     @Environment(ChatViewModel.self) private var chatViewModel
     @Environment(WalletViewModel.self) private var walletViewModel
+    @Binding var selectedDestination: AppDestination
 
     var body: some View {
         List {
+            // Wallet summary card
             Section {
                 walletCard
             }
+
+            // App navigation
+            Section("Views") {
+                navRow(
+                    label: "Chat",
+                    icon: "bubble.left.and.bubble.right",
+                    destination: .chat
+                )
+                navRow(
+                    label: "Portfolio",
+                    icon: "chart.pie.fill",
+                    destination: .portfolio
+                )
+                navRow(
+                    label: "NFT Gallery",
+                    icon: "photo.artframe",
+                    destination: .nftGallery
+                )
+            }
+
+            // Conversation history
             Section("Chats") {
                 ForEach(chatViewModel.conversations) { convo in
                     conversationRow(convo)
@@ -23,19 +46,43 @@ struct ConversationSidebar: View {
             ToolbarItem {
                 Button {
                     chatViewModel.newConversation()
+                    selectedDestination = .chat
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
-                .help("New Chat")
+                .help("New Chat (⌘N)")
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
     }
 
+    // MARK: - Navigation row
+
+    @ViewBuilder
+    private func navRow(label: String, icon: String, destination: AppDestination) -> some View {
+        Button {
+            selectedDestination = destination
+        } label: {
+            Label(label, systemImage: icon)
+                .foregroundStyle(selectedDestination == destination ? Color.accentColor : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 2)
+        .background(
+            selectedDestination == destination
+                ? Color.accentColor.opacity(0.12)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: 6)
+        )
+    }
+
+    // MARK: - Conversation row
+
     @ViewBuilder
     private func conversationRow(_ convo: Conversation) -> some View {
         Button {
             chatViewModel.activeConversation = convo
+            selectedDestination = .chat
         } label: {
             Label {
                 VStack(alignment: .leading, spacing: 2) {
@@ -53,7 +100,7 @@ struct ConversationSidebar: View {
         .buttonStyle(.plain)
         .padding(.vertical, 2)
         .background(
-            chatViewModel.activeConversation?.id == convo.id
+            (chatViewModel.activeConversation?.id == convo.id && selectedDestination == .chat)
                 ? Color.accentColor.opacity(0.15)
                 : Color.clear,
             in: RoundedRectangle(cornerRadius: 6)
@@ -66,6 +113,8 @@ struct ConversationSidebar: View {
             }
         }
     }
+
+    // MARK: - Wallet card
 
     @ViewBuilder
     private var walletCard: some View {
@@ -99,7 +148,7 @@ struct ConversationSidebar: View {
 
 #Preview {
     NavigationSplitView {
-        ConversationSidebar()
+        ConversationSidebar(selectedDestination: .constant(.chat))
     } detail: {
         Text("Select a chat")
     }

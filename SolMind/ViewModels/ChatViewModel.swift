@@ -14,12 +14,31 @@ class ChatViewModel {
 
     private let aiSession = AISession()
     private let solanaClient = SolanaClient()
+    private let store = ConversationStore()
 
     init() {
+        // Will load from disk in loadPersistedConversations(); start with one fresh conversation
         let initial = Conversation(title: "New Chat")
         conversations.append(initial)
         activeConversation = initial
         // setupAI(walletManager:) must be called after WalletViewModel is available
+        loadPersistedConversations()
+    }
+
+    // MARK: - Persistence
+
+    func loadPersistedConversations() {
+        let loaded = (try? store.loadAll()) ?? []
+        if !loaded.isEmpty {
+            conversations = loaded
+            activeConversation = conversations.first
+        }
+    }
+
+    /// Call after every message to persist changes.
+    private func persistActive() {
+        guard let convo = activeConversation else { return }
+        try? store.save(convo)
     }
 
     // MARK: - AI Setup
@@ -85,6 +104,7 @@ class ChatViewModel {
         }
 
         isProcessing = false
+        persistActive()
     }
 
     // MARK: - Conversation Management
@@ -97,10 +117,12 @@ class ChatViewModel {
     }
 
     func deleteConversation(_ convo: Conversation) {
-        conversations.removeAll { $0.id == convo.id }
-        if activeConversation?.id == convo.id {
+        let id = convo.id
+        conversations.removeAll { $0.id == id }
+        if activeConversation?.id == id {
             activeConversation = conversations.first
         }
+        try? store.delete(id)
     }
 
     // MARK: - Streaming with context-window recovery

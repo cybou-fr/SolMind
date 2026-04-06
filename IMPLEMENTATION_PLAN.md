@@ -1,10 +1,11 @@
 # SolMind — Detailed Implementation Plan
 
-> **Status:** Day 1 — project is a default Xcode SwiftData template. Everything below needs to be built.
+> **Status:** Day 2 — Phases 0–5 complete. Phase 6 (demo, submission, QA) in progress.
 > **Targets:** macOS 26.4 (primary), iOS 26.4, iPadOS 26.4, visionOS 26.4
 > **Network:** Solana Devnet only
 > **Bundle ID:** `fr.cybou.SolMind`
 > **Team:** `9W74HUTJJL`
+> **Last updated:** April 7, 2026
 
 ---
 
@@ -30,28 +31,44 @@
 
 ## 1. Current State Assessment
 
-### What exists
+### What exists (Day 2)
 | Item | Status |
 |---|---|
-| Xcode project (`SolMind.xcodeproj`) | ✅ Default multiplatform template (macOS + iOS + visionOS) |
-| `SolMindApp.swift` | ❌ Default SwiftData boilerplate — needs full rewrite |
-| `ContentView.swift` | ❌ Default Item list — needs full rewrite |
-| `Item.swift` | ❌ SwiftData template model — will be removed |
-| Platform targets | ✅ macOS 26.4, iOS 26.4, visionOS 26.4 already configured |
-| Swift Packages (`SolMindCore`, `SolMindUI`) | ❌ Do not exist |
-| Foundation Models integration | ❌ Not started |
-| Solana RPC client | ❌ Not started |
-| Wallet layer (Privy / Phantom) | ❌ Not started |
-| AI Tools (Balance, Send, Swap, etc.) | ❌ Not started |
-| Chat UI | ❌ Not started |
-| Devnet configuration | ❌ Not started |
+| Xcode project (`SolMind.xcodeproj`) | ✅ Multiplatform (macOS + iOS + visionOS), auto file-sync |
+| `SolMindApp.swift` | ✅ Rewritten — WalletViewModel + ChatViewModel injected as environments |
+| `ContentView.swift` | ✅ AppDestination enum, NavigationSplitView (macOS/visionOS), TabView (iOS) |
+| Platform targets | ✅ macOS 26.4, iOS 26.4, visionOS 26.4 |
+| Foundation Models integration | ✅ AISession, AIInstructions, streaming, context-window recovery |
+| Solana RPC client | ✅ SolanaClient (actor): balance, airdrop, sendTransaction, getSignatures |
+| Wallet (local keypair) | ✅ Ed25519 via CryptoKit, Keychain via LocalWallet, WalletManager |
+| All 8 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, TxHistory, OnRamp |
+| Chat UI | ✅ ChatView, MessageBubble, TypingIndicator, FlowLayout chips |
+| Devnet configuration | ✅ SolanaConfig, DevnetBadge in all toolbars |
+| Transaction serialization | ✅ TransactionBuilder (SOL transfer wire format) |
+| TransactionPreviewCard | ✅ @Generable TransactionPreview, confirm/cancel card |
+| Jupiter swap | ✅ JupiterService (quote + swap transaction) |
+| Helius DAS | ✅ HeliusService (getAssetsByOwner) |
+| Price service | ✅ PriceService (Jupiter Price API v2, 30s cache) |
+| NFT Gallery | ✅ NFTGalleryView with AsyncImage grid |
+| Portfolio view | ✅ PortfolioView with token list, pull-to-refresh |
+| Conversation sidebar (macOS) | ✅ ConversationSidebar with nav rows for Chat/Portfolio/NFTs |
+| visionOS ornament | ✅ PortfolioOrnamentView with glassBackgroundEffect |
+| Conversation persistence | ✅ ConversationStore (JSON files in Application Support) |
+| iOS Tab navigation | ✅ TabView with Chat / Portfolio / NFTs tabs |
+| Unit tests | ⚠️ Stub only — need real crypto tests |
+| Phantom deeplinks | ❌ P3 stretch — not implemented |
+| macOS ⌘K clear shortcut | ❌ Pending Phase 5 polish |
+| iOS keyboard docking | ⚠️ Basic — needs `.safeAreaInset` improvement |
 
-### What's correctly set up
-- Multiplatform target: `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator"`
-- Device families: `1,2,7` (iPhone, iPad, Vision Pro)
-- App Sandbox enabled, Hardened Runtime enabled
-- Swift Concurrency: `SWIFT_APPROACHABLE_CONCURRENCY = YES`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
-- Development team configured
+### Architecture decision record
+> **Flat structure in app target (no Swift Packages for MVP)**  
+> `SolMindCore` and `SolMindUI` packages were cut. All code lives directly in the app target for hackathon speed.
+
+> **Local keypair only (no Privy SDK)**  
+> Privy Swift SDK integration is P4 post-hackathon. The MVP uses a locally-generated Ed25519 keypair stored in Keychain (`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`). This provides full self-custody without external SDK dependencies.
+
+> **No .sol domain resolution**  
+> SNS on-chain resolution was cut. Recipient addresses must be valid base58 Solana addresses. The AI validates with `Base58.isValidAddress()` before attempting any send.
 
 ---
 
@@ -120,13 +137,13 @@ SolMind/
 
 ---
 
-## Phase 0 — Project Restructure & Foundation (Day 1-2)
+## Phase 0 — Project Restructure & Foundation ✅ COMPLETE
 
 ### Goals
-- Remove template boilerplate
-- Set up folder structure
-- Add devnet configuration
-- Verify project builds on macOS
+- Remove template boilerplate ✅
+- Set up folder structure ✅
+- Add devnet configuration ✅
+- Verify project builds on macOS ✅
 
 ### Tasks
 
@@ -227,13 +244,13 @@ struct ContentView: View {
 
 ---
 
-## Phase 1 — Core AI Chat (Foundation Models) (Days 3-5)
+## Phase 1 — Core AI Chat (Foundation Models) ✅ COMPLETE
 
 ### Goals
-- Foundation Models session with system instructions
-- Chat UI with message history
-- Streaming text responses
-- Tool protocol stubs (no real implementations yet)
+- Foundation Models session with system instructions ✅
+- Chat UI with message history ✅
+- Streaming text responses ✅
+- Tool protocol stubs → all 8 tools implemented in Phase 3 ✅
 
 ### Tasks
 
@@ -409,13 +426,13 @@ Replace placeholder ContentView with:
 
 ---
 
-## Phase 2 — Solana RPC Client & Wallet (Days 6-10)
+## Phase 2 — Solana RPC Client & Wallet ✅ COMPLETE
 
 ### Goals
-- JSON-RPC client for Solana devnet
-- Local keypair generation & Keychain storage
-- Balance queries working
-- Faucet airdrop working
+- JSON-RPC client for Solana devnet ✅
+- Local keypair generation & Keychain storage ✅
+- Balance queries working ✅
+- Faucet airdrop working ✅
 
 ### Tasks
 
@@ -570,13 +587,13 @@ Create `Views/WalletSetupView.swift`:
 
 ---
 
-## Phase 3 — AI Tool Implementations (Days 11-16)
+## Phase 3 — AI Tool Implementations ✅ COMPLETE
 
 ### Goals
-- Implement all Foundation Models `Tool` conformances
-- AI can call tools and return results
-- TransactionPreview with guided generation
-- Send SOL working end-to-end
+- All 8 Foundation Models `Tool` conformances ✅
+- AI calls tools and returns results ✅
+- TransactionPreview with @Generable guided generation ✅
+- Send SOL working end-to-end ✅
 
 ### Tasks
 
@@ -695,13 +712,13 @@ Update `ChatViewModel` to:
 
 ---
 
-## Phase 4 — DeFi & Sponsor Integrations (Days 17-22)
+## Phase 4 — DeFi & Sponsor Integrations ✅ COMPLETE (Phantom is P3 stretch)
 
 ### Goals
-- Jupiter swap execution (not just quotes)
-- Helius NFT data with images
-- MoonPay sandbox integration
-- Phantom wallet connection (macOS)
+- Jupiter swap execution (quote + signed transaction) ✅
+- Helius NFT data with images ✅ (NFTGalleryView with AsyncImage)
+- MoonPay sandbox integration ✅ (OnRampTool opens sandbox URL in browser)
+- Phantom wallet connection ❌ P3 stretch — cut for MVP
 
 ### Tasks
 
@@ -791,14 +808,16 @@ Create `Views/PortfolioView.swift`:
 
 ---
 
-## Phase 5 — Platform Polish & visionOS (Days 23-28)
+## Phase 5 — Platform Polish & visionOS ⚠️ 80% COMPLETE
 
 ### Goals
-- Polish macOS experience (primary demo platform)
-- iOS compact layout
-- iPadOS multi-column layout
-- visionOS spatial window + ornaments
-- Error handling & edge cases
+- Polish macOS experience (primary demo platform) ✅ sidebar, shortcuts, dark mode
+- iOS compact layout ✅ TabView, ⚠️ keyboard docking needs improvement
+- iPadOS multi-column layout ✅ (inherits macOS NavigationSplitView via size class)
+- visionOS spatial window + ornament ✅
+- Error handling & edge cases ✅ basic, ⚠️ network retry not implemented
+- Conversation persistence ✅ JSON files in Application Support
+- Unit tests ⚠️ pending
 
 ### Tasks
 
@@ -869,7 +888,7 @@ Create `Views/PortfolioView.swift`:
 
 ---
 
-## Phase 6 — Demo, Submission & QA (Days 29-35)
+## Phase 6 — Demo, Submission & QA 🔜 PENDING
 
 ### Goals
 - Record submission video (3 min max)

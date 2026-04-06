@@ -56,17 +56,37 @@ struct ChatView: View {
                 }
             }
 
+#if os(macOS) || os(visionOS)
             Divider()
-
-            // Input Bar
+            // Input Bar inline for macOS and visionOS
             inputBar(vm: chatViewModel)
+#endif
         }
+#if os(iOS)
+        // On iOS the input bar docks above the keyboard via safeAreaInset
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                inputBar(vm: chatViewModel)
+            }
+            .background(.bar)
+        }
+#endif
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 DevnetBadge()
             }
             ToolbarItem(placement: .automatic) {
                 walletIndicator
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    chatViewModel.newConversation()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .help("New Chat (⌘K)")
+                .keyboardShortcut("k", modifiers: .command)
             }
         }
         .navigationTitle(chatViewModel.activeConversation?.title ?? "SolMind")

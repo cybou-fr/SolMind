@@ -7,35 +7,79 @@
 
 import SwiftUI
 
+// MARK: - App destination for sidebar navigation
+enum AppDestination: Hashable {
+    case chat
+    case portfolio
+    case nftGallery
+}
+
 struct ContentView: View {
     @Environment(WalletViewModel.self) private var walletViewModel
     @Environment(ChatViewModel.self) private var chatViewModel
 
-    @State private var showWalletSetup = false
+    @State private var selectedDestination: AppDestination = .chat
 
     var body: some View {
         Group {
             if !walletViewModel.isWalletReady {
                 WalletSetupView()
             } else {
-#if os(macOS)
+#if os(visionOS)
                 NavigationSplitView {
-                    ConversationSidebar()
+                    ConversationSidebar(selectedDestination: $selectedDestination)
                 } detail: {
-                    ChatView()
+                    detailView
                 }
-                .navigationTitle("SolMind")
+                .ornament(attachmentAnchor: .scene(.leading)) {
+                    PortfolioOrnamentView()
+                        .glassBackgroundEffect()
+                }
+#elseif os(macOS)
+                NavigationSplitView {
+                    ConversationSidebar(selectedDestination: $selectedDestination)
+                } detail: {
+                    detailView
+                }
 #else
-                NavigationStack {
-                    ChatView()
-                        .navigationTitle("SolMind")
-                        .navigationBarTitleDisplayMode(.inline)
+                // iOS / iPadOS
+                TabView {
+                    NavigationStack {
+                        ChatView()
+                            .navigationTitle("SolMind")
+                            .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }
+
+                    NavigationStack {
+                        PortfolioView()
+                    }
+                    .tabItem { Label("Portfolio", systemImage: "chart.pie") }
+
+                    NavigationStack {
+                        NFTGalleryView()
+                    }
+                    .tabItem { Label("NFTs", systemImage: "photo.artframe") }
                 }
 #endif
             }
         }
         .task {
             await walletViewModel.setup()
+        }
+    }
+
+    // MARK: - macOS / visionOS Detail View
+
+    @ViewBuilder
+    private var detailView: some View {
+        switch selectedDestination {
+        case .chat:
+            ChatView()
+        case .portfolio:
+            PortfolioView()
+        case .nftGallery:
+            NFTGalleryView()
         }
     }
 }

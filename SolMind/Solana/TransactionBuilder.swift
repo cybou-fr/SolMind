@@ -126,7 +126,7 @@ struct TransactionInstruction {
     let data: Data
 }
 
-enum TransactionError: LocalizedError {
+enum TransactionError: LocalizedError, Equatable {
     case invalidAddress
     case invalidBlockhash
     case insufficientFunds

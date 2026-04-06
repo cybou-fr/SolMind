@@ -72,19 +72,19 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  ┌──────────────────┴──────────────────────────┐  │
 │  │           Wallet Abstraction Layer           │  │
 │  │                                              │  │
-│  │  Privy Swift SDK (embedded wallet)           │  │
-│  │  Phantom (browser ext / deeplinks)           │  │
-│  │  Keychain + iCloud sync                      │  │
+│  │  WalletManager + LocalWallet                 │  │
+│  │  CryptoKit Curve25519 (Ed25519 keypair)      │  │
+│  │  Apple Keychain (private key storage)        │  │
 │  └──────────────────┬──────────────────────────┘  │
 │                     │                             │
 │  ┌──────────────────┴──────────────────────────┐  │
 │  │           External Service Layer             │  │
 │  │                                              │  │
-│  │  Solana JSON-RPC — Devnet (Triton One)       │  │
+│  │  Solana JSON-RPC — Devnet (public endpoint)  │  │
 │  │  Solana Faucet — Devnet airdrop              │  │
 │  │  Jupiter V6 API — Devnet (DEX aggregation)   │  │
 │  │  Helius DAS API — Devnet (token/NFT data)    │  │
-│  │  MoonPay SDK — Sandbox (fiat on/off ramp)    │  │
+│  │  MoonPay — Sandbox (fiat on-ramp URL)        │  │
 │  └─────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
 ```
@@ -112,7 +112,7 @@ let session = LanguageModelSession(instructions: Instructions("""
 
 #### 3.2.2 Tool Calling
 
-Each blockchain operation is encapsulated as a `Tool` conformance. When the user says "send 5 SOL to alice.sol," the model identifies that the `sendTokens` tool should be invoked, extracts the parameters (recipient: "alice.sol", amount: 5.0, tokenMint: nil), and calls the tool. The tool's return value is fed back to the model for response generation.
+Each blockchain operation is encapsulated as a `Tool` conformance. When the user says "send 0.5 SOL to 7xKp...", the model identifies that the `sendTokens` tool should be invoked, extracts the parameters (recipient address, amount 0.5, tokenMint nil), and calls the tool. The tool's return value — a signed transaction signature or error — is fed back to the model for natural language response generation.
 
 ```swift
 struct FaucetTool: Tool {
@@ -185,16 +185,17 @@ struct TransactionPreview {
 
 ### 3.3 Wallet Layer
 
-SolMind supports two wallet strategies to cover both new and existing users:
+SolMind uses a self-custodial Ed25519 keypair generated locally on the device using CryptoKit's `Curve25519.Signing` API — the same elliptic curve Solana uses. The private key is stored exclusively in Apple Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, ensuring it never leaves the device and is not accessible while the device is locked.
 
-| Strategy | Provider | Platform | Use Case |
-|---|---|---|---|
-| Embedded wallet | Privy Swift SDK | macOS + iOS + iPadOS + visionOS | New users; social login, no seed phrase |
-| External wallet | Phantom extension | macOS | Existing crypto users |
-| External wallet | Phantom deeplinks | iOS / iPadOS | Existing crypto users on mobile/tablet |
-| External wallet | Phantom via iPhone handoff | visionOS | Existing crypto users on Vision Pro |
+| Aspect | Implementation |
+|---|---|
+| Key generation | `Curve25519.Signing.PrivateKey()` (CryptoKit) |
+| Public key encoding | Base58 (Bitcoin alphabet) → Solana address |
+| Signing | `privateKey.signature(for: messageData)` |
+| Storage | Keychain `kSecClassGenericPassword`, service `fr.cybou.SolMind.wallet` |
+| Access | `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
 
-Wallet sessions are persisted via Apple Keychain with optional iCloud sync, enabling seamless handoff across a user's Mac, iPhone, iPad, and Vision Pro.
+This provides full self-custody with zero third-party SDK dependencies.
 
 ### 3.4 External Services (Devnet / Sandbox)
 
@@ -202,29 +203,33 @@ All external services are configured for devnet or sandbox mode. No real funds o
 
 | Service | Purpose | Integration | Mode |
 |---|---|---|---|
-| Solana JSON-RPC (Triton One) | Balance queries, transaction submission | Direct HTTP | **Devnet** |
-| Solana Faucet | Free SOL for testing via `requestAirdrop` | Built-in RPC | **Devnet** |
-| Jupiter V6 API | DEX aggregation for token swaps | REST API | **Devnet** |
-| Helius DAS API | Token metadata, NFT data, compressed NFTs | REST API | **Devnet** |
-| MoonPay SDK | Fiat on-ramp simulation (test cards) | Native SDK | **Sandbox** |
-| Phantom | Wallet connection | Extension / deeplinks | **Devnet-aware** |
-| Privy | Embedded wallet auth | Swift SDK | **Testnet config** |
+| Solana JSON-RPC (public devnet) | Balance queries, transaction submission | URLSession + JSON-RPC 2.0 | **Devnet** |
+| Solana Faucet | Free SOL for testing via `requestAirdrop` | Built-in RPC method | **Devnet** |
+| Jupiter V6 API | DEX aggregation for token swaps | REST API (no auth) | **Devnet** |
+| Helius DAS API | Token metadata, NFT data | REST API (API key) | **Devnet** |
+| MoonPay | Fiat on-ramp simulation | Sandbox URL opened in browser | **Sandbox** |
 
 ### 3.5 Multiplatform Code Sharing
 
+All code lives in a single app target with `#if os(...)` branches for platform-specific behavior. No third-party Swift packages are used — the entire implementation depends only on Apple frameworks.
+
 ```
-SolMind/
-├── SolMindApp/              # Thin app targets (per-platform)
-│   ├── macOS/               # Window config, menu bar, toolbar
-│   ├── iOS/                 # Adaptive navigation, haptics
-│   ├── visionOS/            # Spatial scenes, ornaments, volumes
-│   └── Shared/              # App entry point, scene definition
-├── Packages/
-│   ├── SolMindCore/         # 100% shared: AI, wallet, Solana, services
-│   └── SolMindUI/           # 95% shared: chat UI, cards, portfolio, spatial views
+SolMind/ (single app target)
+├── AI/              # AISession, AIInstructions, 8 Tool conformances
+├── Solana/          # SolanaClient (actor), TransactionBuilder, Keypair, Base58
+├── Wallet/          # WalletManager, LocalWallet (Keychain)
+├── Services/        # JupiterService, HeliusService, PriceService, ConversationStore
+├── Views/           # ChatView, NFTGalleryView, PortfolioView, ConversationSidebar,
+│                    # TransactionPreviewCard, WalletSetupView, PortfolioOrnamentView
+├── ViewModels/      # ChatViewModel (@MainActor), WalletViewModel (@MainActor)
+├── Models/          # ChatMessage, Conversation (Codable), TransactionPreview (@Generable)
+└── Config/          # SolanaConfig, Secrets
 ```
 
-Platform-specific code is limited to `#if os(macOS)` / `#if os(iOS)` / `#if os(visionOS)` branches for window management, navigation style, spatial UI, and wallet connection method. iPadOS shares the iOS target with adaptive layout using `horizontalSizeClass`. All business logic, AI tools, and Solana interactions are fully shared across all four platforms.
+Platform navigation strategy:
+- **macOS / visionOS**: `NavigationSplitView` with `ConversationSidebar` → `AppDestination` enum drives detail pane
+- **iOS / iPadOS**: `TabView` with Chat, Portfolio, NFTs tabs
+- **visionOS extra**: `.ornament(attachmentAnchor: .scene(.leading))` with `PortfolioOrnamentView` + `.glassBackgroundEffect()`
 
 ---
 
@@ -234,9 +239,9 @@ SolMind's privacy guarantee rests on a simple architectural fact: **the AI model
 
 | Data | Where it's processed | Leaves device? |
 |---|---|---|
-| User prompts ("send 5 SOL to alice.sol") | On-device Foundation Models | No |
+| User prompts ("send 0.5 SOL to 7xKp...") | On-device Foundation Models | No |
 | AI inference & tool selection | On-device Foundation Models | No |
-| Wallet private keys | Privy secure enclave / Keychain | No |
+| Wallet private keys | CryptoKit Curve25519 + Apple Keychain | No |
 | Balance queries | Solana RPC (public data) | Yes (public blockchain data) |
 | Transaction submission | Solana network | Yes (on-chain by nature) |
 | Token prices, metadata | Jupiter / Helius APIs | Yes (public data) |
@@ -271,7 +276,7 @@ Apple's built-in `Guardrails` flag sensitive content in model input and output. 
 
 ### 5.5 No Seed Phrase Exposure
 
-When using Privy embedded wallets, private keys are managed in the secure enclave and never exposed to the AI model or application code. When using Phantom, signing happens in the external application.
+Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKey()`, stored in the Apple Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, and never exposed to the AI model or application-level code. The AI receives only the wallet's public address.
 
 ---
 
@@ -280,9 +285,9 @@ When using Privy embedded wallets, private keys are managed in the secure enclav
 ### 6.1 Onboarding (30 seconds)
 
 1. Open SolMind — **⚠️ DEVNET** badge visible in toolbar
-2. Sign in with Apple / Google / email (Privy handles auth)
-3. Wallet is created automatically on devnet — no seed phrase step
-4. AI suggests: "Want me to get you some free devnet SOL from the faucet?"
+2. Tap **Create Wallet** — Ed25519 keypair generated locally on device
+3. Public address displayed; private key written to Apple Keychain
+4. AI greets with your devnet address and suggests: "Want me to get you some free devnet SOL from the faucet?"
 5. Start testing: send, swap, check NFTs — all on devnet with test tokens
 
 ### 6.2 Example Interactions
@@ -341,7 +346,7 @@ When using Privy embedded wallets, private keys are managed in the secure enclav
 - **Volumetric transaction cards** — TransactionPreview rendered as 3D floating cards the user can inspect from any angle
 - **Gaze + tap confirmation** — look at the Confirm button and tap to approve transactions
 - **Multi-window** — open separate windows for portfolio, chat, and NFT gallery side by side in your space
-- Privy embedded wallet is the primary wallet method (no browser extension on visionOS); connect Phantom via universal link handoff to companion iPhone
+- Self-custodial Keychain wallet is the primary wallet method — no browser extension required on visionOS
 - Foundation Models runs natively on Vision Pro's M-series chip — same on-device privacy guarantee
 
 ---
@@ -352,12 +357,9 @@ SolMind integrates multiple Colosseum Frontier Hackathon sponsors:
 
 | Sponsor | Integration | Depth |
 |---|---|---|
-| **Phantom** | Wallet connection — browser extension bridge (macOS), universal links (iOS/iPadOS), iPhone handoff (visionOS) | Core |
-| **Privy** | Embedded wallet creation + social auth via Swift SDK (all platforms) | Core |
-| **MoonPay** | Fiat on/off ramp as an AI-callable tool | Core |
-| **Coinbase** | Alternative fiat on-ramp via Coinbase Pay | Secondary |
-| **Squads / Altitude** | Multisig wallet creation: "Create a 2-of-3 with these addresses" | Secondary |
-| **Reflect** | Portfolio performance data source | Secondary |
+| **Jupiter** | DEX aggregation — `swapTokens` tool calls Jupiter V6 `/quote` and `/swap` APIs | Core |
+| **Helius** | DAS API — `getNFTs` and token metadata via `getAssetsByOwner` | Core |
+| **MoonPay** | Fiat on-ramp — `buyWithFiat` tool opens MoonPay sandbox URL in browser | Core |
 
 ---
 
