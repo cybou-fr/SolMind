@@ -31,6 +31,11 @@ struct ConversationSidebar: View {
                     icon: "photo.artframe",
                     destination: .nftGallery
                 )
+                navRow(
+                    label: "Wallets (\(walletViewModel.allAddresses.count))",
+                    icon: "wallet.pass",
+                    destination: .walletPicker
+                )
             }
 
             // Conversation history

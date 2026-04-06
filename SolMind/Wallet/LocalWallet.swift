@@ -1,23 +1,37 @@
 import Foundation
 import Security
+import CryptoKit
 
-// MARK: - Keychain Storage for Wallet Private Key
+// MARK: - Keychain Storage for Multiple Ed25519 Keypairs
+//
+// Each keypair is stored as a Keychain GenericPassword item:
+//   kSecAttrService  = "fr.cybou.SolMind.wallet"
+//   kSecAttrAccount  = base58 public key  (unique per keypair)
+//   kSecValueData    = 32-byte raw private key
+//
+// The currently active address is tracked in UserDefaults.
 
 struct LocalWallet {
-    private static let service = "fr.cybou.SolMind.wallet"
-    private static let account = "ed25519-private-key"
+    static let service = "fr.cybou.SolMind.wallet"
+    private static let activeAddressKey = "fr.cybou.SolMind.activeWallet"
+
+    // MARK: - Active address
+
+    static var activeAddress: String? {
+        get { UserDefaults.standard.string(forKey: activeAddressKey) }
+        set { UserDefaults.standard.set(newValue, forKey: activeAddressKey) }
+    }
 
     // MARK: - Save
 
-    static func save(privateKeyData: Data) throws {
+    static func save(privateKeyData: Data, publicKeyBase58: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: publicKeyBase58,
             kSecValueData as String: privateKeyData,
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
-        // Delete any existing item first
         SecItemDelete(query as CFDictionary)
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else {
@@ -25,13 +39,13 @@ struct LocalWallet {
         }
     }
 
-    // MARK: - Load
+    // MARK: - Load single
 
-    static func load() throws -> Data {
+    static func load(publicKeyBase58: String) throws -> Data {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: publicKeyBase58,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
@@ -43,22 +57,74 @@ struct LocalWallet {
         return data
     }
 
-    // MARK: - Delete
+    // MARK: - List all stored addresses
 
-    static func delete() throws {
+    static func allAddresses() -> [String] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let items = result as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
+
+    // MARK: - Delete single
+
+    static func delete(publicKeyBase58: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: publicKeyBase58
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.deleteFailed(status)
         }
+        if activeAddress == publicKeyBase58 {
+            activeAddress = allAddresses().first
+        }
     }
 
-    static func exists() -> Bool {
-        (try? load()) != nil
+    // MARK: - Existence check (any wallet)
+
+    static func hasAnyWallet() -> Bool {
+        !allAddresses().isEmpty
+    }
+
+    // MARK: - Legacy migration (single-key account → multi-key)
+    //
+    // Old items used account = "ed25519-private-key". On first launch after update,
+    // migrate them under the real public key so they participate in the multi-wallet flow.
+
+    static func migrateLegacyIfNeeded() {
+        let legacyAccount = "ed25519-private-key"
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: legacyAccount,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let rawKey = result as? Data,
+              let privateKey = try? CryptoKit.Curve25519.Signing.PrivateKey(rawRepresentation: rawKey) else { return }
+
+        let publicKeyBase58 = Base58.encode(Array(privateKey.publicKey.rawRepresentation))
+        try? save(privateKeyData: rawKey, publicKeyBase58: publicKeyBase58)
+        if activeAddress == nil { activeAddress = publicKeyBase58 }
+
+        // Remove old item
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: legacyAccount
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
     }
 }
 
@@ -77,3 +143,4 @@ enum KeychainError: LocalizedError {
         }
     }
 }
+

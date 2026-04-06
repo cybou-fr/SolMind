@@ -12,6 +12,7 @@ enum AppDestination: Hashable {
     case chat
     case portfolio
     case nftGallery
+    case walletPicker
 }
 
 struct ContentView: View {
@@ -60,6 +61,11 @@ struct ContentView: View {
                         NFTGalleryView()
                     }
                     .tabItem { Label("NFTs", systemImage: "photo.artframe") }
+
+                    NavigationStack {
+                        WalletPickerView()
+                    }
+                    .tabItem { Label("Wallets", systemImage: "wallet.pass") }
                 }
 #endif
             }
@@ -80,6 +86,8 @@ struct ContentView: View {
             PortfolioView()
         case .nftGallery:
             NFTGalleryView()
+        case .walletPicker:
+            WalletPickerView()
         }
     }
 }

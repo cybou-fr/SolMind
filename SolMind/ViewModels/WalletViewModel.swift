@@ -17,6 +17,9 @@ class WalletViewModel {
     var publicKey: String? { walletManager.publicKey }
     var displayAddress: String { walletManager.displayAddress }
 
+    /// All wallet addresses stored on this device, including the active one.
+    var allAddresses: [String] { walletManager.allAddresses }
+
     // MARK: - Setup
 
     func setup() async {
@@ -28,6 +31,31 @@ class WalletViewModel {
         } catch {
             setupError = error.localizedDescription
         }
+    }
+
+    // MARK: - Multi-wallet
+
+    /// Generate a new keypair, persist it, and activate it. Returns the new address.
+    @discardableResult
+    func generateNewWallet() async throws -> String {
+        let address = try walletManager.createAndActivateWallet()
+        solBalance = 0
+        tokenBalances = []
+        return address
+    }
+
+    /// Switch the active wallet to `address`.
+    func switchWallet(to address: String) async throws {
+        try walletManager.switchWallet(to: address)
+        solBalance = 0
+        tokenBalances = []
+        await refreshBalance()
+    }
+
+    /// Delete a wallet. Switches to the next one automatically if it was active.
+    func deleteWallet(address: String) async throws {
+        try walletManager.deleteWallet(address: address)
+        await refreshBalance()
     }
 
     // MARK: - Balance
@@ -79,3 +107,4 @@ class WalletViewModel {
         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ("USDT", "Tether USD")
     ]
 }
+
