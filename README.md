@@ -28,7 +28,7 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 - **Devnet-only MVP** — persistent ⚠️ DEVNET badge; all APIs in sandbox/devnet mode
 - **Faucet built-in** — say "give me some SOL" and the AI airdrops free devnet SOL
 - **Truly multiplatform** — macOS 26 primary + iOS 26 + iPadOS 26 + visionOS 26, single codebase
-- **Self-custodial** — Ed25519 keypair generated on-device, stored in Apple Keychain
+- **Self-custodial multi-wallet** — generate unlimited Ed25519 keypairs; each stored separately in Apple Keychain; switch or delete at any time
 
 ## Architecture
 
@@ -40,7 +40,7 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 │  Apple Foundation Models (on-device LLM)      │
 │  LanguageModelSession + Tool Calling          │
 │  → Balance, Faucet, Send, Swap,               │
-│     Price, NFTs, TxHistory, OnRamp           │
+│     Price, NFTs, TxHistory, OnRamp            │
 ├───────────────────────────────────────────────┤
 │  Wallet: Ed25519 keypair in Apple Keychain    │
 ├───────────────────────────────────────────────┤
@@ -63,13 +63,14 @@ SolMind/
 │   │   ├── AIInstructions.swift
 │   │   └── Tools/            # 8 Tool conformances
 │   ├── Solana/               # SolanaClient, TransactionBuilder, Keypair, Base58
-│   ├── Wallet/               # WalletManager, LocalWallet (Keychain)
+│   ├── Wallet/               # WalletManager (multi-keypair), LocalWallet (Keychain)
 │   ├── Services/             # JupiterService, HeliusService, PriceService, ConversationStore
 │   ├── Views/                # ChatView, MessageBubble, TransactionPreviewCard,
 │   │                         # PortfolioView, NFTGalleryView, WalletSetupView,
-│   │                         # ConversationSidebar, DevnetBadge, PortfolioOrnamentView
+│   │                         # WalletPickerView, ConversationSidebar,
+│   │                         # DevnetBadge, PortfolioOrnamentView
 │   └── ViewModels/           # ChatViewModel, WalletViewModel
-├── SolMindTests/             # Unit tests (Base58, TransactionBuilder, RPCResponse)
+├── SolMindTests/             # Unit tests (Base58, CompactU16, TransactionBuilder)
 └── SolMind.xcodeproj/
 ```
 
@@ -105,8 +106,8 @@ SolMind/
 
 | Platform | Navigation | Extras |
 |---|---|---|
-| **macOS** | `NavigationSplitView` — sidebar + detail | ⌘N new chat, ⌘Enter send, ⌘K clear |
-| **iOS** | `TabView` — Chat / Portfolio / NFTs | Keyboard-safe input |
+| **macOS** | `NavigationSplitView` — sidebar + detail | ⌘N new chat, ⌘Enter send, ⌘K new chat, Wallets row in sidebar |
+| **iOS** | `TabView` — Chat / Portfolio / NFTs / Wallets | Keyboard-safe input via `.safeAreaInset` |
 | **iPadOS** | `NavigationSplitView` (inherits macOS) | Adaptive column visibility |
 | **visionOS** | `NavigationSplitView` + ornament | `PortfolioOrnamentView` with `.glassBackgroundEffect()` |
 
@@ -145,7 +146,7 @@ open SolMind.xcodeproj
 ## Security Model
 
 - **AI inference is on-device.** No API key for AI. No telemetry on financial intent.
-- **Private key never leaves the device.** Stored in `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` Keychain.
+- **Private keys never leave the device.** Each keypair stored under `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`; keyed by its own base58 public key.
 - **Confirmation required for all state changes.** Every send/swap shows a `TransactionPreviewCard` before execution.
 - **Suspicious AI responses are blocked.** Any AI response mentioning "private key" or "seed phrase" is intercepted.
 - **Address validation before use.** All addresses are Base58-decoded and checked for 32-byte length.

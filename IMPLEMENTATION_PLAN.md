@@ -5,7 +5,7 @@
 > **Network:** Solana Devnet only
 > **Bundle ID:** `fr.cybou.SolMind`
 > **Team:** `9W74HUTJJL`
-> **Last updated:** April 7, 2026
+> **Last updated:** April 7, 2026 (multi-keypair wallet)
 
 ---
 
@@ -40,7 +40,7 @@
 | Platform targets | ✅ macOS 26.4, iOS 26.4, visionOS 26.4 |
 | Foundation Models integration | ✅ AISession, AIInstructions, streaming, context-window recovery |
 | Solana RPC client | ✅ SolanaClient (actor): balance, airdrop, sendTransaction, getSignatures |
-| Wallet (local keypair) | ✅ Ed25519 via CryptoKit, Keychain via LocalWallet, WalletManager |
+| Wallet (local keypair) | ✅ Ed25519 via CryptoKit, **multi-keypair** Keychain (LocalWallet), WalletManager |
 | All 8 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, TxHistory, OnRamp |
 | Chat UI | ✅ ChatView, MessageBubble, TypingIndicator, FlowLayout chips |
 | Devnet configuration | ✅ SolanaConfig, DevnetBadge in all toolbars |
@@ -51,21 +51,22 @@
 | Price service | ✅ PriceService (Jupiter Price API v2, 30s cache) |
 | NFT Gallery | ✅ NFTGalleryView with AsyncImage grid |
 | Portfolio view | ✅ PortfolioView with token list, pull-to-refresh |
-| Conversation sidebar (macOS) | ✅ ConversationSidebar with nav rows for Chat/Portfolio/NFTs |
+| Conversation sidebar (macOS) | ✅ ConversationSidebar with nav rows for Chat/Portfolio/NFTs/Wallets |
 | visionOS ornament | ✅ PortfolioOrnamentView with glassBackgroundEffect |
 | Conversation persistence | ✅ ConversationStore (JSON files in Application Support) |
-| iOS Tab navigation | ✅ TabView with Chat / Portfolio / NFTs tabs |
-| Unit tests | ⚠️ Stub only — need real crypto tests |
+| iOS Tab navigation | ✅ TabView with Chat / Portfolio / NFTs / Wallets tabs |
+| ⌘K new chat shortcut | ✅ Toolbar button + keyboardShortcut in ChatView |
+| iOS keyboard docking | ✅ `.safeAreaInset(edge: .bottom)` on iOS |
+| Multi-keypair wallets | ✅ Generate, switch, delete; legacy migration; WalletPickerView |
+| Unit tests | ✅ Base58 roundtrip/known address, CompactU16, SOL transfer serialization length |
 | Phantom deeplinks | ❌ P3 stretch — not implemented |
-| macOS ⌘K clear shortcut | ❌ Pending Phase 5 polish |
-| iOS keyboard docking | ⚠️ Basic — needs `.safeAreaInset` improvement |
 
 ### Architecture decision record
 > **Flat structure in app target (no Swift Packages for MVP)**  
 > `SolMindCore` and `SolMindUI` packages were cut. All code lives directly in the app target for hackathon speed.
 
-> **Local keypair only (no Privy SDK)**  
-> Privy Swift SDK integration is P4 post-hackathon. The MVP uses a locally-generated Ed25519 keypair stored in Keychain (`kSecClassGenericPassword`, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`). This provides full self-custody without external SDK dependencies.
+> **Local keypair — multi-keypair support**  
+> Each keypair is stored as a distinct Keychain item (`kSecAttrAccount` = base58 public key). `LocalWallet.allAddresses()` enumerates all persisted wallets; `LocalWallet.activeAddress` (a `UserDefaults` key) tracks which is active. `WalletManager.createAndActivateWallet()` generates a new keypair and makes it active; `switchWallet(to:)` hot-swaps; `deleteWallet(address:)` auto-selects the next wallet. `WalletPickerView` provides the full UI. Legacy single-key Keychain items (`account = "ed25519-private-key"`) are automatically migrated on first launch.
 
 > **No .sol domain resolution**  
 > SNS on-chain resolution was cut. Recipient addresses must be valid base58 Solana addresses. The AI validates with `Base58.isValidAddress()` before attempting any send.
@@ -120,7 +121,9 @@ SolMind/
 │   │   ├── PortfolioView.swift        # Balance & token list
 │   │   ├── NFTGalleryView.swift       # NFT grid display
 │   │   ├── WalletSetupView.swift      # Onboarding / wallet creation
+│   │   ├── WalletPickerView.swift     # Multi-keypair list, generate, switch, delete
 │   │   ├── DevnetBadge.swift          # Persistent ⚠️ DEVNET indicator
+│   │   ├── PortfolioOrnamentView.swift# visionOS ornament
 │   │   └── ConversationSidebar.swift  # macOS sidebar for conversation list
 │   ├── ViewModels/
 │   │   ├── ChatViewModel.swift        # Chat state management + AI session

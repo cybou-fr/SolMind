@@ -185,15 +185,18 @@ struct TransactionPreview {
 
 ### 3.3 Wallet Layer
 
-SolMind uses a self-custodial Ed25519 keypair generated locally on the device using CryptoKit's `Curve25519.Signing` API — the same elliptic curve Solana uses. The private key is stored exclusively in Apple Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, ensuring it never leaves the device and is not accessible while the device is locked.
+SolMind uses self-custodial Ed25519 keypairs generated locally on the device using CryptoKit's `Curve25519.Signing` API — the same elliptic curve Solana uses. The app supports **multiple keypairs**: each private key is stored as an independent Keychain item keyed by its base58 public address. The user can generate new addresses, switch between them, and delete old ones entirely from the Wallets screen.
 
 | Aspect | Implementation |
 |---|---|
 | Key generation | `Curve25519.Signing.PrivateKey()` (CryptoKit) |
 | Public key encoding | Base58 (Bitcoin alphabet) → Solana address |
 | Signing | `privateKey.signature(for: messageData)` |
-| Storage | Keychain `kSecClassGenericPassword`, service `fr.cybou.SolMind.wallet` |
-| Access | `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
+| Storage | Keychain `kSecClassGenericPassword`, `kSecAttrAccount` = base58 public key |
+| Access control | `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` |
+| Active wallet | Tracked via `UserDefaults` (`fr.cybou.SolMind.activeWallet`) |
+| Multiple wallets | `LocalWallet.allAddresses()` enumerates all stored keypairs |
+| Legacy migration | Old single-key items auto-migrated to per-address scheme on first launch |
 
 This provides full self-custody with zero third-party SDK dependencies.
 
@@ -217,18 +220,19 @@ All code lives in a single app target with `#if os(...)` branches for platform-s
 SolMind/ (single app target)
 ├── AI/              # AISession, AIInstructions, 8 Tool conformances
 ├── Solana/          # SolanaClient (actor), TransactionBuilder, Keypair, Base58
-├── Wallet/          # WalletManager, LocalWallet (Keychain)
+├── Wallet/          # WalletManager (multi-keypair), LocalWallet (Keychain)
 ├── Services/        # JupiterService, HeliusService, PriceService, ConversationStore
 ├── Views/           # ChatView, NFTGalleryView, PortfolioView, ConversationSidebar,
-│                    # TransactionPreviewCard, WalletSetupView, PortfolioOrnamentView
+│                    # TransactionPreviewCard, WalletSetupView, WalletPickerView,
+│                    # PortfolioOrnamentView
 ├── ViewModels/      # ChatViewModel (@MainActor), WalletViewModel (@MainActor)
 ├── Models/          # ChatMessage, Conversation (Codable), TransactionPreview (@Generable)
 └── Config/          # SolanaConfig, Secrets
 ```
 
 Platform navigation strategy:
-- **macOS / visionOS**: `NavigationSplitView` with `ConversationSidebar` → `AppDestination` enum drives detail pane
-- **iOS / iPadOS**: `TabView` with Chat, Portfolio, NFTs tabs
+- **macOS / visionOS**: `NavigationSplitView` with `ConversationSidebar` → `AppDestination` enum drives detail pane (`chat`, `portfolio`, `nftGallery`, `walletPicker`)
+- **iOS / iPadOS**: `TabView` with Chat, Portfolio, NFTs, Wallets tabs
 - **visionOS extra**: `.ornament(attachmentAnchor: .scene(.leading))` with `PortfolioOrnamentView` + `.glassBackgroundEffect()`
 
 ---
@@ -285,10 +289,11 @@ Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKe
 ### 6.1 Onboarding (30 seconds)
 
 1. Open SolMind — **⚠️ DEVNET** badge visible in toolbar
-2. Tap **Create Wallet** — Ed25519 keypair generated locally on device
+2. Tap **Create Wallet** — first Ed25519 keypair generated locally on device
 3. Public address displayed; private key written to Apple Keychain
 4. AI greets with your devnet address and suggests: "Want me to get you some free devnet SOL from the faucet?"
-5. Start testing: send, swap, check NFTs — all on devnet with test tokens
+5. Generate additional wallets anytime via the **Wallets** tab / sidebar entry
+6. Start testing: send, swap, check NFTs — all on devnet with test tokens
 
 ### 6.2 Example Interactions
 
