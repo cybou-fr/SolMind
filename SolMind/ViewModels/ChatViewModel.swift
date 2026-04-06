@@ -94,6 +94,21 @@ class ChatViewModel {
                let title = activeConversation?.messages.first?.content {
                 activeConversation?.title = String(title.prefix(40))
             }
+        } catch AIError.contextWindowExceeded {
+            // Context overflow: session has been reset. Do NOT retry — a silent retry after
+            // context clear could cause transaction tools to fabricate success.
+            activeConversation?.messages[msgIndex].content = """
+            ⚠️ The conversation became too long and the context window was exceeded. \
+            The session has been reset automatically.
+
+            **Your last action was NOT executed.** Please start a new chat (⌘K) and repeat your request.
+            """
+            activeConversation?.messages[msgIndex].isStreaming = false
+            isProcessing = false
+            persistActive()
+            // Start a fresh conversation so the next message has a clean context
+            newConversation()
+            return
         } catch {
             activeConversation?.messages[msgIndex].content = error.localizedDescription
             activeConversation?.messages[msgIndex].isStreaming = false
@@ -127,20 +142,34 @@ class ChatViewModel {
 
     // MARK: - Streaming with context-window recovery
 
-    /// Streams a response; if the session hits a GenerationError (context overflow),
-    /// resets the session and retries once with just the current message.
+    /// Streams a response. If the session hits a context-window overflow, resets the
+    /// session and throws `AIError.contextWindowExceeded` — callers must NOT retry
+    /// automatically because doing so after a reset produces hallucinated responses
+    /// (the AI has no context of what tool call or transaction was in progress).
     private func streamWithRecovery(_ prompt: String) async throws -> String {
         do {
             return try await collectStream(prompt)
         } catch {
-            let isGenerationError = error.localizedDescription.contains("GenerationError") ||
-                                    error.localizedDescription.contains("error -1")
-            if isGenerationError {
+            if isContextWindowError(error) {
                 aiSession.reset()
-                return try await collectStream(prompt)
+                throw AIError.contextWindowExceeded
             }
             throw error
         }
+    }
+
+    /// Detects context-window overflow errors from Foundation Models.
+    /// Matches both the system-level message ("4096", "exceeded", "context") and
+    /// any GenerationError description that older beta builds produce.
+    private func isContextWindowError(_ error: Error) -> Bool {
+        if case AIError.contextWindowExceeded = error { return true }
+        let text = error.localizedDescription.lowercased()
+        return text.contains("4096")
+            || text.contains("context length")
+            || text.contains("context window")
+            || text.contains("exceeded")
+            || text.contains("generationerror")
+            || text.contains("error -1")
     }
 
     private func collectStream(_ prompt: String) async throws -> String {

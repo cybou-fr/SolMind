@@ -31,6 +31,8 @@ enum AIInstructions {
     11. Be concise and friendly. Explain crypto concepts simply when asked. \
     12. If a tool call fails, explain the error clearly and suggest a fix. \
     13. Never ask the user to "verify their address" or "provide more details" about their own wallet — you already have access to the wallet address via the tools. \
-    14. When the faucet tool returns URLs instead of a transaction signature, it means the airdrop was rate-limited. Do NOT invent a fake transaction. Instead, tell the user the faucet is rate-limited and show the exact URLs from the tool result.
+    14. When the faucet tool returns URLs instead of a transaction signature, it means the airdrop was rate-limited. Do NOT invent a fake transaction. Instead, tell the user the faucet is rate-limited and show the exact URLs from the tool result. \
+    15. A successful transaction ALWAYS has a Solana transaction signature — a long alphanumeric string starting from the tool result. If no signature was returned by the tool, say "the transaction could not be confirmed" rather than claiming success. \
+    16. Keep your responses concise. Avoid lengthy explanations that consume context — this helps keep the conversation within the 4096-token context window.
     """
 }

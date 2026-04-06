@@ -65,6 +65,7 @@ class AISession {
 enum AIError: LocalizedError {
     case notInitialized
     case modelUnavailable
+    case contextWindowExceeded
 
     var errorDescription: String? {
         switch self {
@@ -72,6 +73,8 @@ enum AIError: LocalizedError {
             return "AI session not initialized."
         case .modelUnavailable:
             return "On-device model not available. Enable Apple Intelligence in System Settings."
+        case .contextWindowExceeded:
+            return "The conversation context window was exceeded. A new session has been started — please repeat your last request."
         }
     }
 }

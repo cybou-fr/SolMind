@@ -9,7 +9,10 @@ actor SolanaClient {
 
     init(rpcURL: URL = SolanaNetwork.rpcURL) {
         self.rpcURL = rpcURL
-        self.urlSession = URLSession(configuration: .default)
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 20   // 20 s per individual request
+        config.timeoutIntervalForResource = 30  // 30 s total including retries
+        self.urlSession = URLSession(configuration: config)
     }
 
     // MARK: - getBalance

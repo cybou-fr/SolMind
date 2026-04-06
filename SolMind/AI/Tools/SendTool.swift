@@ -68,6 +68,13 @@ struct SendTool: Tool {
             )
 
             let signature = try await solanaClient.sendTransaction(serialized: txData)
+
+            // Sanity-check the signature before reporting success.
+            // A real Solana signature is a base58 string of 87–88 characters.
+            guard signature.count >= 80, Base58.decode(signature) != nil else {
+                return "⚠️ DEVNET: sendTransaction returned an unexpected response. The transaction may not have been submitted. Check the explorer manually."
+            }
+
             return """
             ✅ DEVNET: Transaction sent!
             Signature: \(signature)

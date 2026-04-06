@@ -73,6 +73,9 @@ struct SwapTool: Tool {
         do {
             let swapData = try await jupiterService.getSwapTransaction(quote: quote, userPublicKey: publicKey)
             let signature = try await solanaClient.sendTransaction(serialized: swapData)
+            guard signature.count >= 80, Base58.decode(signature) != nil else {
+                return "⚠️ DEVNET: sendTransaction returned an unexpected response. The swap may not have been submitted. Check the explorer manually."
+            }
             return """
             ✅ DEVNET: Swap executed!
             Signature: \(signature)
