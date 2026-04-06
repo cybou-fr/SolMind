@@ -6,27 +6,21 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct SolMindApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var walletViewModel = WalletViewModel()
+    @State private var chatViewModel = ChatViewModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(walletViewModel)
+                .environment(chatViewModel)
         }
-        .modelContainer(sharedModelContainer)
+#if os(macOS)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unified)
+#endif
     }
 }

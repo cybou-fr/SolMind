@@ -33,18 +33,18 @@ AI:   "Sent! TX: 4xK2...9fR3"
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────┐
-│       Multiplatform App (SwiftUI)               │
-│  macOS 26 · iOS 26 · iPadOS 26 · visionOS 26   │
-├────────────────────────────────────────────────────┤
-│  Apple Foundation Models (on-device LLM)    │
-│  Tool Calling → Balance, Send, Swap,        │
-│                 Price, NFTs, OnRamp          │
-├─────────────────────────────────────────────┤
-│  Wallet: Privy SDK + Phantom                │
-├─────────────────────────────────────────────┤
-│  Solana RPC · Jupiter · Helius · MoonPay    │
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│       Multiplatform App (SwiftUI)             │
+│  macOS 26 · iOS 26 · iPadOS 26 · visionOS 26  │
+├───────────────────────────────────────────────┤
+│  Apple Foundation Models (on-device LLM)      │
+│  Tool Calling → Balance, Send, Swap,          │
+│                 Price, NFTs, OnRamp           │
+├───────────────────────────────────────────────┤
+│  Wallet: Privy SDK + Phantom                  │
+├───────────────────────────────────────────────┤
+│  Solana RPC · Jupiter · Helius · MoonPay      │
+└───────────────────────────────────────────────┘
 ```
 
 ## Project Structure
