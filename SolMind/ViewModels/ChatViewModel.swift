@@ -53,6 +53,8 @@ class ChatViewModel {
             PriceTool(),
             SwapTool(walletManager: walletManager, jupiterService: jupiterService, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             NFTTool(walletManager: walletManager, heliusService: heliusService),
+            MintNFTTool(walletManager: walletManager, heliusService: heliusService, confirmationHandler: confirmationHandler),
+            CreateTokenTool(walletManager: walletManager, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
             OnRampTool(walletManager: walletManager)
         ]

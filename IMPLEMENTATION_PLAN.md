@@ -5,7 +5,7 @@
 > **Network:** Solana Devnet only
 > **Bundle ID:** `fr.cybou.SolMind`
 > **Team:** `9W74HUTJJL`
-> **Last updated:** April 7, 2026 (multi-keypair wallet)
+> **Last updated:** April 8, 2026 (devnet token ecosystem — SPL token creation, cNFT minting, Circle USDC faucet)
 
 ---
 
@@ -41,13 +41,16 @@
 | Foundation Models integration | ✅ AISession, AIInstructions, streaming, context-window recovery |
 | Solana RPC client | ✅ SolanaClient (actor): balance, airdrop, sendTransaction, getSignatures |
 | Wallet (local keypair) | ✅ Ed25519 via CryptoKit, **multi-keypair** Keychain (LocalWallet), WalletManager |
-| All 8 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, TxHistory, OnRamp |
+| All 10 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, MintNFT, CreateToken, TxHistory, OnRamp |
 | Chat UI | ✅ ChatView, MessageBubble, TypingIndicator, FlowLayout chips |
 | Devnet configuration | ✅ SolanaConfig, DevnetBadge in all toolbars |
 | Transaction serialization | ✅ TransactionBuilder (SOL transfer wire format) |
 | TransactionPreviewCard | ✅ @Generable TransactionPreview, confirm/cancel card |
-| Jupiter swap | ✅ JupiterService (quote + swap transaction) |
-| Helius DAS | ✅ HeliusService (getAssetsByOwner) |
+| Jupiter swap | ✅ JupiterService (quote + swap transaction, URLSession timeout, devnet USDC mint fixed) |
+| Helius DAS | ✅ HeliusService (getAssetsByOwner + mintCompressedNft) |
+| SPL token creation | ✅ CreateTokenTool + TransactionBuilder.buildCreateMint/buildMintTokens + PDA derivation |
+| Compressed NFT minting | ✅ MintNFTTool via Helius cNFT API (fee-free for owner) |
+| Devnet USDC faucet | ✅ FaucetTool updated with Circle faucet URL (https://faucet.circle.com) |
 | Price service | ✅ PriceService (Jupiter Price API v2, 30s cache) |
 | NFT Gallery | ✅ NFTGalleryView with AsyncImage grid |
 | Portfolio view | ✅ PortfolioView with token list, pull-to-refresh |

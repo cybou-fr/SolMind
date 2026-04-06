@@ -1,18 +1,30 @@
 import Foundation
 
 // MARK: - Jupiter DEX Service
+// NOTE: api.jup.ag is MAINNET ONLY. Devnet has no Jupiter liquidity pools.
+// Swaps via this service work on mainnet; on devnet they will return quote errors.
 
 class JupiterService {
     private let baseURL = URL(string: "https://api.jup.ag")!
+    private let urlSession: URLSession
 
-    // Well-known devnet token mints
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 20
+        config.timeoutIntervalForResource = 30
+        self.urlSession = URLSession(configuration: config)
+    }
+
+    // Well-known token mint addresses.
+    // Devnet USDC: Circle's official devnet mint (faucet: https://faucet.circle.com)
+    // Other tokens only exist on mainnet; Jupiter quotes for SOL↔USDC will fail on devnet.
     private static let symbolToMint: [String: String] = [
-        "SOL": "So11111111111111111111111111111111111111112",
+        "SOL":  "So11111111111111111111111111111111111111112",
         "WSOL": "So11111111111111111111111111111111111111112",
-        "USDC": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "USDC": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",  // devnet USDC (Circle)
         "USDT": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-        "BTC": "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E",
-        "ETH": "2FPyTwcZLUglTvA6naznkuoARgABCnpQSbPQgBBeNdnd"
+        "BTC":  "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E",
+        "ETH":  "2FPyTwcZLUglTvA6naznkuoARgABCnpQSbPQgBBeNdnd"
     ]
 
     static func mintForSymbol(_ input: String) -> String {
@@ -33,7 +45,7 @@ class JupiterService {
         ]
 
         guard let url = components.url else { throw JupiterError.invalidURL }
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await urlSession.data(from: url)
         return try JSONDecoder().decode(SwapQuote.self, from: data)
     }
 
@@ -54,7 +66,7 @@ class JupiterService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SwapRequest(quoteResponse: quote, userPublicKey: userPublicKey))
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, _) = try await urlSession.data(for: request)
 
         struct SwapResponse: Decodable {
             let swapTransaction: String

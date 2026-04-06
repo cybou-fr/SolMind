@@ -65,6 +65,8 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  │                 ├── SwapTool                 │  │
 │  │                 ├── PriceTool                │  │
 │  │                 ├── NFTTool                  │  │
+│  │                 ├── MintNFTTool              │  │
+│  │                 ├── CreateTokenTool          │  │
 │  │                 ├── TransactionHistoryTool   │  │
 │  │                 └── OnRampTool (sandbox)     │  │
 │  └──────────────────┬──────────────────────────┘  │
@@ -82,8 +84,9 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  │                                              │  │
 │  │  Solana JSON-RPC — Devnet (public endpoint)  │  │
 │  │  Solana Faucet — Devnet airdrop              │  │
-│  │  Jupiter V6 API — Devnet (DEX aggregation)   │  │
-│  │  Helius DAS API — Devnet (token/NFT data)    │  │
+│  │  Jupiter V6 API — Mainnet quotes only        │  │
+│  │  Helius DAS + cNFT API — Devnet             │  │
+│  │  Circle USDC Faucet — Devnet test tokens    │  │
 │  │  MoonPay — Sandbox (fiat on-ramp URL)        │  │
 │  └─────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────┘
@@ -306,12 +309,21 @@ Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKe
 > → AI calls `getFromFaucet` → "Airdropped 1 SOL to your devnet wallet. Balance is now 13.45 SOL."
 
 **Token transfer:**
-> "Send 100 USDC to bob.sol"
-> → AI calls `sendTokens` → preview card: "⚠️ DEVNET — Send 100 USDC to bob.sol" → user confirms → "Sent! TX: 5xA3..."
+> "Send 0.5 SOL to 3A5vT2..."
+> → AI calls `sendTokens` → preview card: "⚠️ DEVNET — Send 0.5 SOL to 3A5vT2..." → user confirms → "Sent! TX: 5xA3..."
 
 **Swap:**
-> "Swap all my BONK to SOL"
-> → AI calls `getBalance` for BONK → calls `swapTokens` via Jupiter devnet → preview → confirm → done
+> "Swap 0.1 SOL for USDC"
+> → AI calls `swapTokens` via Jupiter → preview → confirm → done
+> (Note: Jupiter is mainnet-only; on devnet the quote will fail and AI explains the limitation)
+
+**Mint an NFT:**
+> "Mint me an NFT called SolMind Pioneer"
+> → AI calls `mintNFT` → Helius creates compressed NFT on devnet for free → "Your NFT has been minted!"
+
+**Create a token:**
+> "Create a token called SolDEMO with 1 million supply"
+> → AI calls `createToken` → two transactions sent (createMint + mintTokens) → mint address returned
 
 **Portfolio overview:**
 > "Show me everything I have"
@@ -320,7 +332,6 @@ Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKe
 **Fiat on-ramp:**
 > "I want to buy $200 worth of SOL"
 > → AI calls `buyWithFiat` → MoonPay sandbox flow opens → simulated purchase
-> (Or: "Just give me free devnet SOL" → AI calls `getFromFaucet`)
 
 ### 6.3 macOS Desktop Experience
 
@@ -362,9 +373,20 @@ SolMind integrates multiple Colosseum Frontier Hackathon sponsors:
 
 | Sponsor | Integration | Depth |
 |---|---|---|
-| **Jupiter** | DEX aggregation — `swapTokens` tool calls Jupiter V6 `/quote` and `/swap` APIs | Core |
-| **Helius** | DAS API — `getNFTs` and token metadata via `getAssetsByOwner` | Core |
+| **Jupiter** | DEX aggregation — `swapTokens` tool calls Jupiter V6 `/quote` and `/swap` APIs; price oracle for `getPrice` | Core |
+| **Helius** | DAS API — `getNFTs` via `getAssetsByOwner`; **compressed NFT minting** via `mintCompressedNft` RPC extension | Core |
 | **MoonPay** | Fiat on-ramp — `buyWithFiat` tool opens MoonPay sandbox URL in browser | Core |
+
+### Devnet Token Ecosystem
+
+| Token | Mint Address | How to Acquire |
+|---|---|---|
+| SOL (native) | — | `getFromFaucet` AI tool, or [faucet.solana.com](https://faucet.solana.com) |
+| USDC (devnet) | `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU` | [faucet.circle.com](https://faucet.circle.com) — Circle's official devnet USDC faucet |
+| Custom SPL tokens | User-defined at creation time | `createToken` AI tool — deploys a new token mint with custom symbol/supply |
+| Compressed NFTs | Helius-generated asset ID | `mintNFT` AI tool — completely free via Helius API |
+
+> **Jupiter devnet note:** `api.jup.ag` operates on mainnet liquidity only. Devnet swap quotes fail because no real pools exist. The `swapTokens` tool communicates this limitation clearly and suggests using `faucet.circle.com` for devnet USDC instead.
 
 ---
 
@@ -405,12 +427,10 @@ The entire MVP is hardcoded to Solana Devnet. There is no mainnet toggle, no net
 |---|---|---|
 | Solana RPC | Devnet | Full functionality |
 | `requestAirdrop` | Devnet | Free SOL, 1-2 SOL/request, rate-limited |
-| Jupiter V6 | Devnet | Swap routes available for major devnet tokens |
-| Helius DAS | Devnet | Devnet API key, token/NFT metadata |
-| Phantom | Devnet-aware | Detects cluster from transaction |
-| Privy | Testnet | Embedded wallets work on devnet |
+| Jupiter V6 | **Mainnet only** | Quote/swap API is mainnet-only; devnet has no liquidity pools |
+| Helius DAS | Devnet | NFT metadata + `mintCompressedNft` extension |
+| Circle USDC Faucet | Devnet | Free USDC at [faucet.circle.com](https://faucet.circle.com) |
 | MoonPay | Sandbox | Test card numbers, no real charges |
-| Coinbase Pay | Sandbox | Test mode API keys |
 
 This architecture ensures safe, risk-free demos and eliminates any possibility of financial loss during the hackathon.
 

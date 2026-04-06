@@ -57,6 +57,9 @@ struct FaucetTool: Tool {
         • https://faucet.quicknode.com/solana/devnet — QuickNode devnet faucet
         • https://solfaucet.com — SolFaucet.com
 
+        For devnet USDC, use Circle's dedicated faucet:
+        • https://faucet.circle.com — Provides devnet USDC (paste your wallet address)
+
         Your wallet address: \(publicKey)
         """
     }

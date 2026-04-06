@@ -24,9 +24,11 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 - **Natural language wallet** — chat to check balances, send tokens, swap, view NFTs
 - **100% on-device AI** — Foundation Models runs locally on Apple Silicon. Zero data leakage.
 - **Guided generation** — transactions produce typed Swift structs (`TransactionPreview`) for safe confirmation
-- **8 AI Tools** — Balance, Faucet, Send, Swap, Price, NFTs, Transaction History, MoonPay on-ramp
+- **10 AI Tools** — Balance, Faucet, Send, Swap, Price, NFTs, MintNFT, CreateToken, Transaction History, MoonPay on-ramp
+- **Mint compressed NFTs** — one command mints a cNFT on devnet via Helius (fee-free for the user)
+- **Create SPL tokens** — deploy a brand-new fungible token with custom name/symbol/supply in natural language
 - **Devnet-only MVP** — persistent ⚠️ DEVNET badge; all APIs in sandbox/devnet mode
-- **Faucet built-in** — say "give me some SOL" and the AI airdrops free devnet SOL
+- **Faucet built-in** — say "give me some SOL" and the AI airdrops free devnet SOL; Circle USDC faucet also linked
 - **Truly multiplatform** — macOS 26 primary + iOS 26 + iPadOS 26 + visionOS 26, single codebase
 - **Self-custodial multi-wallet** — generate unlimited Ed25519 keypairs; each stored separately in Apple Keychain; switch or delete at any time
 
@@ -40,7 +42,8 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 │  Apple Foundation Models (on-device LLM)      │
 │  LanguageModelSession + Tool Calling          │
 │  → Balance, Faucet, Send, Swap,               │
-│     Price, NFTs, TxHistory, OnRamp            │
+│     Price, NFTs, MintNFT, CreateToken,        │
+│     TxHistory, OnRamp                         │
 ├───────────────────────────────────────────────┤
 │  Wallet: Ed25519 keypair in Apple Keychain    │
 ├───────────────────────────────────────────────┤
@@ -61,8 +64,8 @@ SolMind/
 │   ├── AI/
 │   │   ├── AISession.swift   # LanguageModelSession wrapper
 │   │   ├── AIInstructions.swift
-│   │   └── Tools/            # 8 Tool conformances
-│   ├── Solana/               # SolanaClient, TransactionBuilder, Keypair, Base58
+│   │   └── Tools/            # 10 Tool conformances
+│   ├── Solana/               # SolanaClient, TransactionBuilder (SOL + SPL), Keypair, Base58
 │   ├── Wallet/               # WalletManager (multi-keypair), LocalWallet (Keychain)
 │   ├── Services/             # JupiterService, HeliusService, PriceService, ConversationStore
 │   ├── Views/                # ChatView, MessageBubble, TransactionPreviewCard,
@@ -94,11 +97,13 @@ SolMind/
 | Tool | What it does |
 |---|---|
 | `getBalance` | SOL and SPL token balances (devnet) |
-| `getFromFaucet` | Airdrop free devnet SOL; falls back to web faucet URLs if rate-limited |
+| `getFromFaucet` | Airdrop free devnet SOL; falls back to Circle USDC faucet URL if rate-limited |
 | `sendTokens` | Send SOL to a base58 address with preview → confirm flow |
-| `swapTokens` | Swap tokens via Jupiter DEX (devnet) with preview → confirm |
+| `swapTokens` | Swap tokens via Jupiter DEX; notes devnet liquidity limitations |
 | `getPrice` | Current token prices (Jupiter Price API v2, 30s cache) |
 | `getNFTs` | List wallet NFTs via Helius DAS API (devnet) |
+| `mintNFT` | Mint a compressed NFT on devnet via Helius — **fee-free for the user** |
+| `createToken` | Create a new SPL token with custom name/symbol/supply/decimals (~0.005 SOL for rent) |
 | `getTransactionHistory` | Recent transactions from devnet |
 | `buyWithFiat` | Opens MoonPay sandbox widget in browser |
 
@@ -151,12 +156,22 @@ open SolMind.xcodeproj
 - **Suspicious AI responses are blocked.** Any AI response mentioning "private key" or "seed phrase" is intercepted.
 - **Address validation before use.** All addresses are Base58-decoded and checked for 32-byte length.
 
+## Devnet Token Ecosystem
+
+| Token | Devnet Availability | How to Get |
+|---|---|---|
+| **SOL** | ✅ Native | `getFromFaucet` AI tool, or [faucet.solana.com](https://faucet.solana.com) |
+| **USDC** | ✅ Circle devnet mint (`4zMMC9...`) | [faucet.circle.com](https://faucet.circle.com) |
+| **Custom tokens** | ✅ Create on demand | `createToken` AI tool — deploys new SPL token in seconds |
+| **NFTs** | ✅ Compressed NFTs via Helius | `mintNFT` AI tool — completely free |
+| **Swaps (USDC↔SOL)** | ⚠️ Limited | Jupiter `api.jup.ag` is mainnet-only; devnet swaps will fail with no-liquidity |
+
 ## Hackathon Sponsors Used
 
 | Sponsor | How |
 |---|---|
-| **Jupiter** | Token swap quotes + execution (`swapTokens` AI tool) |
-| **Helius** | NFT metadata via DAS API (`getNFTs` AI tool + NFTGalleryView) |
+| **Jupiter** | Token swap quotes + execution (`swapTokens` AI tool); price oracle |
+| **Helius** | NFT metadata via DAS API (`getNFTs`); compressed NFT minting (`mintNFT`) |
 | **MoonPay** | Fiat on-ramp sandbox widget (`buyWithFiat` AI tool) |
 
 ## License
