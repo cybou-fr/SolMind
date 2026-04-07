@@ -12,16 +12,27 @@ class ChatViewModel {
     var isProcessing = false
     var aiUnavailable = false
 
+    // Suggestions shown after each AI response
+    var currentSuggestions: [String] = []
+
+    // AI stats
+    var lastResponseTime: TimeInterval?
+
     private let aiSession = AISession()
     private let solanaClient = SolanaClient()
     private let store = ConversationStore()
 
+    // Weak-ish references injected by setupAI — safe since all @MainActor same lifetime
+    private var walletVM: WalletViewModel?
+    private var statsVM: SolanaStatsViewModel?
+
+    // Context injection flag — reset per conversation
+    private var hasInjectedContext = false
+
     init() {
-        // Will load from disk in loadPersistedConversations(); start with one fresh conversation
         let initial = Conversation(title: "New Chat")
         conversations.append(initial)
         activeConversation = initial
-        // setupAI(walletManager:) must be called after WalletViewModel is available
         loadPersistedConversations()
     }
 
@@ -35,7 +46,6 @@ class ChatViewModel {
         }
     }
 
-    /// Call after every message to persist changes.
     private func persistActive() {
         guard let convo = activeConversation else { return }
         try? store.save(convo)
@@ -43,7 +53,15 @@ class ChatViewModel {
 
     // MARK: - AI Setup
 
-    func setupAI(walletManager: WalletManager, confirmationHandler: TransactionConfirmationHandler) {
+    func setupAI(
+        walletManager: WalletManager,
+        confirmationHandler: TransactionConfirmationHandler,
+        walletViewModel: WalletViewModel? = nil,
+        statsViewModel: SolanaStatsViewModel? = nil
+    ) {
+        self.walletVM = walletViewModel
+        self.statsVM = statsViewModel
+
         let jupiterService = JupiterService()
         let heliusService = HeliusService()
         let tools: [any Tool] = [
@@ -71,18 +89,24 @@ class ChatViewModel {
         activeConversation?.messages.append(userMessage)
         inputText = ""
         isProcessing = true
+        currentSuggestions = []
 
-        // Placeholder for streaming assistant response
         var assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
         activeConversation?.messages.append(assistantMsg)
         let msgIndex = (activeConversation?.messages.count ?? 1) - 1
 
         do {
-            var fullResponse = try await streamWithRecovery(trimmed)
+            // Build contextual prompt (injects wallet/network context on first message)
+            let prompt = buildContextualPrompt(userText: trimmed)
+
+            let start = Date()
+            let fullResponse = try await streamWithRecovery(prompt)
+            lastResponseTime = Date().timeIntervalSince(start)
+
             activeConversation?.messages[msgIndex].content = fullResponse
             activeConversation?.messages[msgIndex].isStreaming = false
 
-            // Security: block any response that attempts to solicit sensitive credentials
+            // Security: block responses that solicit sensitive credentials
             if isSuspiciousResponse(fullResponse) {
                 activeConversation?.messages[msgIndex].content = """
                 ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
@@ -91,14 +115,20 @@ class ChatViewModel {
                 """
             }
 
-            // Auto-title conversation from first message
+            // Auto-title conversation from first user message
             if activeConversation?.messages.count == 2,
                let title = activeConversation?.messages.first?.content {
                 activeConversation?.title = String(title.prefix(40))
             }
+
+            // Generate contextual follow-up suggestions
+            currentSuggestions = SuggestionEngine.suggestions(
+                for: fullResponse,
+                userMessage: trimmed,
+                walletHasBalance: (walletVM?.solBalance ?? 0) > 0
+            )
+
         } catch AIError.contextWindowExceeded {
-            // Context overflow: session has been reset. Do NOT retry — a silent retry after
-            // context clear could cause transaction tools to fabricate success.
             activeConversation?.messages[msgIndex].content = """
             ⚠️ The conversation became too long and the context window was exceeded. \
             The session has been reset automatically.
@@ -108,7 +138,6 @@ class ChatViewModel {
             activeConversation?.messages[msgIndex].isStreaming = false
             isProcessing = false
             persistActive()
-            // Start a fresh conversation so the next message has a clean context
             newConversation()
             return
         } catch {
@@ -130,7 +159,10 @@ class ChatViewModel {
         let convo = Conversation()
         conversations.insert(convo, at: 0)
         activeConversation = convo
-        aiSession.reset() // fresh context window for each conversation
+        aiSession.reset()
+        hasInjectedContext = false
+        currentSuggestions = []
+        lastResponseTime = nil
     }
 
     func deleteConversation(_ convo: Conversation) {
@@ -142,12 +174,29 @@ class ChatViewModel {
         try? store.delete(id)
     }
 
+    // MARK: - Context Injection
+
+    /// Prepends wallet + network context to the FIRST message of each session.
+    /// Subsequent messages are sent as-is (context already in transcript).
+    private func buildContextualPrompt(userText: String) -> String {
+        guard !hasInjectedContext,
+              let wvm = walletVM,
+              wvm.isWalletReady else { return userText }
+
+        hasInjectedContext = true
+
+        return AIInstructions.contextBlock(
+            walletAddress: wvm.publicKey ?? "unknown",
+            solBalance: wvm.solBalance,
+            solUSDValue: wvm.solUSDValue,
+            tokenCount: wvm.tokenBalances.count,
+            statsContext: statsVM?.contextSummary ?? "",
+            userMessage: userText
+        )
+    }
+
     // MARK: - Streaming with context-window recovery
 
-    /// Streams a response. If the session hits a context-window overflow, resets the
-    /// session and throws `AIError.contextWindowExceeded` — callers must NOT retry
-    /// automatically because doing so after a reset produces hallucinated responses
-    /// (the AI has no context of what tool call or transaction was in progress).
     private func streamWithRecovery(_ prompt: String) async throws -> String {
         do {
             return try await collectStream(prompt)
@@ -160,9 +209,6 @@ class ChatViewModel {
         }
     }
 
-    /// Detects context-window overflow errors from Foundation Models.
-    /// Matches both the system-level message ("4096", "exceeded", "context") and
-    /// any GenerationError description that older beta builds produce.
     private func isContextWindowError(_ error: Error) -> Bool {
         if case AIError.contextWindowExceeded = error { return true }
         let text = error.localizedDescription.lowercased()
@@ -177,8 +223,12 @@ class ChatViewModel {
     private func collectStream(_ prompt: String) async throws -> String {
         var result = ""
         for try await chunk in aiSession.stream(prompt) {
-            // partial.content is the full accumulated text so far — replace, don't append
             result = chunk
+            // Update streaming content in real-time
+            let msgIndex = (activeConversation?.messages.count ?? 1) - 1
+            if msgIndex >= 0 {
+                activeConversation?.messages[msgIndex].content = result
+            }
         }
         return result
     }
@@ -189,7 +239,7 @@ class ChatViewModel {
         let lower = text.lowercased()
         let privateKeyPhrases = [
             "private key", "seed phrase", "mnemonic", "secret key",
-            "clé privée", "phrase secrète",  // French variants
+            "clé privée", "phrase secrète",
             "provide your", "share your key", "enter your key",
             "including your private", "wallet secret"
         ]

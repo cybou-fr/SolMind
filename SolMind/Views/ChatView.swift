@@ -6,7 +6,7 @@ struct ChatView: View {
     @Environment(ChatViewModel.self) private var chatViewModel
     @Environment(WalletViewModel.self) private var walletViewModel
     @Environment(TransactionConfirmationHandler.self) private var confirmationHandler
-    @State private var scrollProxy: ScrollViewProxy?
+    @Environment(SolanaStatsViewModel.self) private var statsVM
 
     var body: some View {
         @Bindable var vm = chatViewModel
@@ -24,6 +24,11 @@ struct ChatView: View {
                 .background(Color.orange.opacity(0.15))
                 .foregroundStyle(.orange)
             }
+
+            // Solana live stats bar
+            SolanaStatsBar()
+
+            Divider()
 
             // Messages
             ScrollViewReader { proxy in
@@ -57,14 +62,17 @@ struct ChatView: View {
                 }
             }
 
+            // Suggestion chips (shown after AI responds, above input bar)
+            if !chatViewModel.currentSuggestions.isEmpty && !chatViewModel.isProcessing {
+                suggestionChipsRow(chatViewModel.currentSuggestions)
+            }
+
 #if os(macOS) || os(visionOS)
             Divider()
-            // Input Bar inline for macOS and visionOS
             inputBar(vm: chatViewModel)
 #endif
         }
 #if os(iOS)
-        // On iOS the input bar docks above the keyboard via safeAreaInset
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
@@ -73,7 +81,7 @@ struct ChatView: View {
             .background(.bar)
         }
 #endif
-        // Native transaction confirmation card — slides up when a Tool is waiting for confirmation.
+        // Native transaction confirmation card
         .overlay(alignment: .bottom) {
             if let preview = confirmationHandler.pendingPreview {
                 TransactionPreviewCard(
@@ -92,6 +100,9 @@ struct ChatView: View {
                 DevnetBadge()
             }
             ToolbarItem(placement: .automatic) {
+                aiStatsIndicator
+            }
+            ToolbarItem(placement: .automatic) {
                 walletIndicator
             }
             ToolbarItem(placement: .automatic) {
@@ -108,6 +119,9 @@ struct ChatView: View {
 #if os(macOS)
         .navigationSubtitle("Devnet")
 #endif
+        .task {
+            await statsVM.refresh()
+        }
     }
 
     // MARK: - Sub-views
@@ -124,36 +138,39 @@ struct ChatView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            suggestionChips
+
+            // Static starter suggestions
+            let starters = [
+                "What's my balance?",
+                "Give me some devnet SOL",
+                "What's the price of SOL?",
+                "Show my recent transactions"
+            ]
+            suggestionChipsRow(starters)
         }
         .padding(40)
         .frame(maxWidth: .infinity)
     }
 
+    /// Horizontal scrollable suggestion chips
     @ViewBuilder
-    private var suggestionChips: some View {
-        let suggestions = [
-            "What's my balance?",
-            "Give me some devnet SOL",
-            "What's the price of SOL?",
-            "Show my recent transactions"
-        ]
-        FlowLayout(spacing: 8) {
-            ForEach(suggestions, id: \.self) { suggestion in
-                Button(suggestion) {
-                    Task {
-                        // Inject suggestion into input and send
-                        // Using MainActor since ChatViewModel is @MainActor
-                        await MainActor.run {
-                            chatViewModel.inputText = suggestion
+    private func suggestionChipsRow(_ suggestions: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button(suggestion) {
+                        Task {
+                            await MainActor.run { chatViewModel.inputText = suggestion }
+                            await chatViewModel.sendMessage()
                         }
-                        await chatViewModel.sendMessage()
                     }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+                    .tint(.accentColor)
                 }
-                .buttonStyle(.bordered)
-                .font(.caption)
-                .tint(.accentColor)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
         }
     }
 
@@ -169,7 +186,7 @@ struct ChatView: View {
                 .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
                 .onSubmit {
 #if os(macOS)
-                    // ⌘Enter sends on macOS; plain Enter adds newline
+                    // ⌘Enter sends on macOS
 #else
                     Task { await vm.sendMessage() }
 #endif
@@ -188,6 +205,23 @@ struct ChatView: View {
         .padding(.vertical, 8)
     }
 
+    // MARK: - Toolbar items
+
+    /// AI response time badge
+    @ViewBuilder
+    private var aiStatsIndicator: some View {
+        if let t = chatViewModel.lastResponseTime {
+            HStack(spacing: 3) {
+                Image(systemName: "brain")
+                    .font(.caption2)
+                Text(String(format: "%.1fs", t))
+                    .font(.caption2.monospacedDigit())
+            }
+            .foregroundStyle(.secondary)
+            .help("Last AI response time")
+        }
+    }
+
     @ViewBuilder
     private var walletIndicator: some View {
         HStack(spacing: 4) {
@@ -201,7 +235,7 @@ struct ChatView: View {
     }
 }
 
-// MARK: - Simple Flow Layout
+// MARK: - Simple Flow Layout (kept for empty state chips fallback)
 
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
@@ -252,4 +286,5 @@ struct FlowLayout: Layout {
     }
     .environment(ChatViewModel())
     .environment(WalletViewModel())
+    .environment(SolanaStatsViewModel())
 }

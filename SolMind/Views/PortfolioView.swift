@@ -8,6 +8,21 @@ struct PortfolioView: View {
 
     var body: some View {
         List {
+            // Total portfolio value header
+            if let total = walletViewModel.totalPortfolioUSD {
+                Section {
+                    VStack(spacing: 4) {
+                        Text("Total Portfolio Value")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(total, format: .currency(code: "USD"))
+                            .font(.largeTitle.bold())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+            }
+
             // SOL Balance
             Section("Wallet") {
                 HStack {
@@ -15,17 +30,25 @@ struct PortfolioView: View {
                         Text("SOL Balance")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text(walletViewModel.solBalance, format: .number.precision(.fractionLength(6)))
-                            .font(.title2.bold())
-                        + Text(" SOL")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(walletViewModel.solBalance, format: .number.precision(.fractionLength(6)))
+                                .font(.title2.bold())
+                            Text("SOL")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let usdValue = walletViewModel.solUSDValue {
+                            Text(usdValue, format: .currency(code: "USD"))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button {
                         Task {
                             isRefreshing = true
                             await walletViewModel.refreshBalance()
+                            await walletViewModel.refreshTransactionHistory()
                             isRefreshing = false
                         }
                     } label: {
@@ -69,6 +92,33 @@ struct PortfolioView: View {
                 }
             }
 
+            // Recent Activity
+            Section {
+                if walletViewModel.isLoadingTransactions {
+                    HStack {
+                        ProgressView()
+                        Text("Loading transactions…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else if walletViewModel.recentTransactions.isEmpty {
+                    Text("No recent transactions")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ForEach(walletViewModel.recentTransactions) { tx in
+                        transactionRow(tx)
+                    }
+                }
+            } header: {
+                Text("Recent Activity")
+            } footer: {
+                if !walletViewModel.recentTransactions.isEmpty {
+                    Text("Showing last \(walletViewModel.recentTransactions.count) transactions on devnet.")
+                        .font(.caption2)
+                }
+            }
+
             // Quick Actions
             Section("Quick Actions") {
                 Button {
@@ -82,6 +132,40 @@ struct PortfolioView: View {
         .navigationTitle("Portfolio")
         .refreshable {
             await walletViewModel.refreshBalance()
+            await walletViewModel.refreshTransactionHistory()
+        }
+        .task {
+            if walletViewModel.recentTransactions.isEmpty {
+                await walletViewModel.refreshTransactionHistory()
+            }
+        }
+    }
+
+    // MARK: - Transaction Row
+
+    @ViewBuilder
+    private func transactionRow(_ tx: TransactionModel) -> some View {
+        Link(destination: tx.explorerURL) {
+            HStack(spacing: 10) {
+                Image(systemName: tx.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(tx.isSuccess ? Color.green : Color.red)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tx.signature.prefix(8) + "…" + tx.signature.suffix(4))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.primary)
+                    Text(tx.formattedDate)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "arrow.up.right.square")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }
