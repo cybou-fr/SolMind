@@ -49,8 +49,8 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│               SolMind Application                    │
-│   SwiftUI · macOS / iOS / iPadOS / visionOS          │
+│               SolMind Application                   │
+│   SwiftUI · macOS / iOS / iPadOS / visionOS         │
 │                                                     │
 │   SolanaStatsBar ── SolanaStatsViewModel            │
 │   Suggestion chips ── SuggestionEngine              │
