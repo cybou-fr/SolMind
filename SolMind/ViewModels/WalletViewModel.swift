@@ -162,9 +162,12 @@ class WalletViewModel {
     }
 
     private let knownTokens: [String: (symbol: String, name: String)] = [
+        // Mainnet / standard mints (Jupiter price API uses these)
         "So11111111111111111111111111111111111111112": ("SOL", "Wrapped SOL"),
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": ("USDC", "USD Coin"),
-        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ("USDT", "Tether USD")
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ("USDT", "Tether USD"),
+        // Devnet-specific mints
+        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": ("USDC", "USD Coin (devnet)")
     ]
 }
 

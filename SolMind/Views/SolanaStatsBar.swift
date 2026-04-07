@@ -77,6 +77,15 @@ struct SolanaStatsBar: View {
         }
         .frame(height: 28)
         .background(.bar)
+        // Auto-refresh every 60 seconds while the bar is visible
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if !Task.isCancelled {
+                    await statsVM.refresh()
+                }
+            }
+        }
     }
 
     // MARK: - Sub-views

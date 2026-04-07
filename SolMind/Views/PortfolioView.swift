@@ -5,6 +5,7 @@ import SwiftUI
 struct PortfolioView: View {
     @Environment(WalletViewModel.self) private var walletViewModel
     @State private var isRefreshing = false
+    @State private var rotationDegrees: Double = 0
 
     var body: some View {
         List {
@@ -47,14 +48,17 @@ struct PortfolioView: View {
                     Button {
                         Task {
                             isRefreshing = true
+                            withAnimation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
+                                rotationDegrees = 360
+                            }
                             await walletViewModel.refreshBalance()
                             await walletViewModel.refreshTransactionHistory()
                             isRefreshing = false
+                            withAnimation(.default) { rotationDegrees = 0 }
                         }
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(isRefreshing ? 360 : 0))
-                            .animation(isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isRefreshing)
+                            .rotationEffect(.degrees(rotationDegrees))
                     }
                     .buttonStyle(.plain)
                 }
