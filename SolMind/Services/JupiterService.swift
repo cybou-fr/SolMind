@@ -5,7 +5,10 @@ import Foundation
 // Swaps via this service work on mainnet; on devnet they will return quote errors.
 
 class JupiterService {
-    private let baseURL = URL(string: "https://api.jup.ag")!
+    // Jupiter Swap API v1 (unified)
+    private static let quoteURL = URL(string: "https://api.jup.ag/swap/v1/quote")!
+    private static let swapURL  = URL(string: "https://api.jup.ag/swap/v1/swap")!
+
     private let urlSession: URLSession
 
     init() {
@@ -36,11 +39,11 @@ class JupiterService {
     // MARK: - Quote
 
     func getQuote(inputMint: String, outputMint: String, amount: UInt64) async throws -> SwapQuote {
-        var components = URLComponents(url: baseURL.appendingPathComponent("quote/v6"), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: Self.quoteURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [
-            URLQueryItem(name: "inputMint", value: inputMint),
-            URLQueryItem(name: "outputMint", value: outputMint),
-            URLQueryItem(name: "amount", value: String(amount)),
+            URLQueryItem(name: "inputMint",   value: inputMint),
+            URLQueryItem(name: "outputMint",  value: outputMint),
+            URLQueryItem(name: "amount",      value: String(amount)),
             URLQueryItem(name: "slippageBps", value: "50")
         ]
 
@@ -60,8 +63,7 @@ class JupiterService {
             let prioritizationFeeLamports: String = "auto"
         }
 
-        let url = baseURL.appendingPathComponent("swap/v6")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: Self.swapURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(SwapRequest(quoteResponse: quote, userPublicKey: userPublicKey))
@@ -87,8 +89,40 @@ struct SwapQuote: Codable {
     let outputMint: String
     let inAmount: String
     let outAmount: String
-    let priceImpactPct: Double
+    // priceImpactPct: Jupiter v6 returns as String; newer APIs may return Double. Handle both.
+    let priceImpactPct: String
     let routePlan: [RoutePlan]
+
+    enum CodingKeys: String, CodingKey {
+        case inputMint, outputMint, inAmount, outAmount, priceImpactPct, routePlan
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        inputMint  = try c.decode(String.self, forKey: .inputMint)
+        outputMint = try c.decode(String.self, forKey: .outputMint)
+        inAmount   = try c.decode(String.self, forKey: .inAmount)
+        outAmount  = try c.decode(String.self, forKey: .outAmount)
+        routePlan  = try c.decode([RoutePlan].self, forKey: .routePlan)
+        // Accept both String and Double from the API
+        if let s = try? c.decode(String.self, forKey: .priceImpactPct) {
+            priceImpactPct = s
+        } else if let d = try? c.decode(Double.self, forKey: .priceImpactPct) {
+            priceImpactPct = String(d)
+        } else {
+            priceImpactPct = "0"
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(inputMint,      forKey: .inputMint)
+        try c.encode(outputMint,     forKey: .outputMint)
+        try c.encode(inAmount,       forKey: .inAmount)
+        try c.encode(outAmount,      forKey: .outAmount)
+        try c.encode(priceImpactPct, forKey: .priceImpactPct)
+        try c.encode(routePlan,      forKey: .routePlan)
+    }
 }
 
 struct RoutePlan: Codable {
@@ -105,7 +139,7 @@ enum JupiterError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "Invalid Jupiter URL."
+        case .invalidURL:         return "Invalid Jupiter URL."
         case .invalidTransaction: return "Invalid swap transaction from Jupiter."
         }
     }
