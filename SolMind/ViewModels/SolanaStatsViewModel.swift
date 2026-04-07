@@ -11,7 +11,7 @@ class SolanaStatsViewModel {
     var solPrice: Double?
     var isRefreshing = false
 
-    private let priceService = PriceService()
+    private let priceService = PriceService.shared
     private let networkService = SolanaNetworkService.shared
 
     private enum Keys {

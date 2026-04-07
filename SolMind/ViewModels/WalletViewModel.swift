@@ -22,7 +22,7 @@ class WalletViewModel {
     }
 
     private let solanaClient = SolanaClient()
-    private let priceService = PriceService()
+    private let priceService = PriceService.shared
 
     var isWalletReady: Bool { walletManager.isConnected }
     var publicKey: String? { walletManager.publicKey }
@@ -73,17 +73,21 @@ class WalletViewModel {
 
     func refreshBalance() async {
         guard let pk = walletManager.publicKey else { return }
-        do {
-            async let balanceFetch = solanaClient.getSOLBalance(publicKey: pk)
-            async let tokenFetch = solanaClient.getTokenAccounts(owner: pk)
 
-            let (balance, tokenAccounts) = try await (balanceFetch, tokenFetch)
+        // SOL balance, token accounts, and SOL price fetched concurrently.
+        // Each result is applied independently so a token error never prevents
+        // the SOL balance from updating.
+        async let solFetch = solanaClient.getSOLBalance(publicKey: pk)
+        async let tokenFetch = solanaClient.getTokenAccounts(owner: pk)
+        async let priceFetch: Double? = try? await priceService.getPrice(symbol: "SOL")
+
+        if let balance = try? await solFetch {
             solBalance = balance
+            let price = await priceFetch
+            solUSDValue = price.map { balance * $0 }
+        }
 
-            let solPrice: Double? = (try? await priceService.getPrice(symbol: "SOL")) ?? nil
-            solUSDValue = solPrice.map { balance * $0 }
-
-            // Fetch token prices concurrently for known tokens
+        if let tokenAccounts = try? await tokenFetch {
             var tokens = tokenAccounts.map { account in
                 TokenBalance(
                     mint: account.mint,
@@ -93,6 +97,7 @@ class WalletViewModel {
                     rawAmount: account.rawAmount
                 )
             }
+            // Fetch token USD values concurrently
             await withTaskGroup(of: (Int, Double?).self) { group in
                 for (index, token) in tokens.enumerated() {
                     let symbol = token.symbol
@@ -108,8 +113,6 @@ class WalletViewModel {
                 }
             }
             tokenBalances = tokens
-        } catch {
-            // Balance errors are non-fatal — keep existing values
         }
     }
 

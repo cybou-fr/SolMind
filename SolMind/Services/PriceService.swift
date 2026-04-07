@@ -3,6 +3,8 @@ import Foundation
 // MARK: - Token Price Service (Jupiter Price API)
 
 actor PriceService {
+    static let shared = PriceService()
+
     private var cache: [String: (price: Double, fetchedAt: Date)] = [:]
     private let cacheTTL: TimeInterval = 30
 

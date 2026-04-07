@@ -41,15 +41,7 @@ struct ChatView: View {
                             MessageBubble(message: message)
                                 .id(message.id)
                         }
-                        if chatViewModel.isProcessing {
-                            HStack {
-                                TypingIndicator()
-                                    .padding(8)
-                                    .background(Color.secondary.opacity(0.15), in: Capsule())
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                        }
+                        // Spacer anchor — always scroll here
                         Color.clear.frame(height: 1).id("bottom")
                     }
                     .padding(.vertical, 8)
@@ -287,4 +279,5 @@ struct FlowLayout: Layout {
     .environment(ChatViewModel())
     .environment(WalletViewModel())
     .environment(SolanaStatsViewModel())
+    .environment(TransactionConfirmationHandler())
 }

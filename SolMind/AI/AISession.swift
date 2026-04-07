@@ -46,9 +46,11 @@ class AISession {
                 continuation.finish(throwing: AIError.notInitialized)
                 return
             }
-            Task {
+            let task = Task {
                 do {
                     for try await partial in session.streamResponse(to: prompt) {
+                        // Stop yielding if the consumer has already cancelled.
+                        if Task.isCancelled { break }
                         continuation.yield(partial.content)
                     }
                     continuation.finish()
@@ -56,6 +58,8 @@ class AISession {
                     continuation.finish(throwing: error)
                 }
             }
+            // Cancel the inner Task when the stream consumer stops (cancellation or early exit).
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

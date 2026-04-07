@@ -96,4 +96,6 @@ struct ContentView: View {
     ContentView()
         .environment(WalletViewModel())
         .environment(ChatViewModel())
+        .environment(SolanaStatsViewModel())
+        .environment(TransactionConfirmationHandler())
 }

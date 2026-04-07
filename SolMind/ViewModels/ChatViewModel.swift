@@ -260,14 +260,25 @@ class ChatViewModel {
 
     // MARK: - Security
 
+    // Detect responses where the AI is actively soliciting credentials.
+    // Purely informational mentions ("your key is stored securely on-device") are NOT blocked.
     private func isSuspiciousResponse(_ text: String) -> Bool {
         let lower = text.lowercased()
-        let privateKeyPhrases = [
-            "private key", "seed phrase", "mnemonic", "secret key",
-            "clé privée", "phrase secrète",
-            "provide your", "share your key", "enter your key",
-            "including your private", "wallet secret"
-        ]
-        return privateKeyPhrases.contains { lower.contains($0) }
+        // Solicitation verbs that indicate the AI is requesting something from the user
+        let requestVerbs = ["enter your", "provide your", "send me your", "share your",
+                            "tell me your", "type your", "paste your", "give me your",
+                            "submit your", "input your"]
+        // Credential nouns
+        let credentialNouns = ["private key", "seed phrase", "mnemonic", "secret key",
+                               "recovery phrase", "wallet secret", "secret phrase"]
+        // Block only if a request verb appears near a credential noun
+        for verb in requestVerbs {
+            if lower.contains(verb) {
+                for noun in credentialNouns {
+                    if lower.contains(noun) { return true }
+                }
+            }
+        }
+        return false
     }
 }
