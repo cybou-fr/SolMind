@@ -140,6 +140,15 @@ struct ConversationSidebar: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let total = walletViewModel.totalPortfolioUSD {
+                Text(total, format: .currency(code: "USD"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let solUSD = walletViewModel.solUSDValue {
+                Text(solUSD, format: .currency(code: "USD"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Button("Refresh Balance") {
                 Task { await walletViewModel.refreshBalance() }
             }

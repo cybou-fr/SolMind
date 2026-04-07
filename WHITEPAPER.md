@@ -6,7 +6,7 @@
 
 ## Abstract
 
-SolMind is a native multiplatform wallet application (macOS, iOS, iPadOS, visionOS) that combines Apple's Foundation Models framework with the Solana blockchain to deliver a natural-language interface for decentralized finance. By leveraging an on-device large language model with tool calling capabilities, SolMind enables users to execute blockchain operations — checking balances, sending tokens, swapping assets, viewing NFTs, and requesting faucet airdrops — through conversational prompts, while ensuring that all AI inference happens locally. No financial intent data, no portfolio information, and no transaction details ever leave the user's device during AI processing. SolMind runs natively on Mac, iPhone, iPad, and Apple Vision Pro from a single shared codebase. **This hackathon MVP operates exclusively on Solana Devnet with all sponsor APIs in sandbox/test mode.**
+SolMind is a native multiplatform wallet application (macOS, iOS, iPadOS, visionOS) that combines Apple's Foundation Models framework with the Solana blockchain to deliver a natural-language interface for decentralized finance. By leveraging an on-device large language model with tool calling capabilities, SolMind enables users to execute blockchain operations — checking balances, sending tokens, swapping assets, viewing NFTs, and requesting faucet airdrops — through conversational prompts, while ensuring that all AI inference happens locally. No financial intent data, no portfolio information, and no transaction details ever leave the user's device during AI processing. The AI is enriched with a compressed Solana ecosystem knowledge base (DeFi protocols, NFT standards, staking, wallet security), live network statistics (epoch, TPS), and contextual wallet state injected at session start — all processed on-device. SolMind runs natively on Mac, iPhone, iPad, and Apple Vision Pro from a single shared codebase. **This hackathon MVP operates exclusively on Solana Devnet with all sponsor APIs in sandbox/test mode.**
 
 ---
 
@@ -48,48 +48,58 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 ### 3.1 System Overview
 
 ```
-┌──────────────────────────────────────────────────┐
-│              SolMind Application                  │
-│  SwiftUI · macOS / iOS / iPadOS / visionOS        │
-├──────────────────────────────────────────────────┤
-│                                                   │
-│  ┌─────────────────────────────────────────────┐  │
-│  │     Apple Foundation Models (On-Device)      │  │
-│  │                                              │  │
-│  │  SystemLanguageModel.default                 │  │
-│  │  LanguageModelSession(instructions:)         │  │
-│  │                                              │  │
-│  │  Tool Calling ──┬── BalanceTool              │  │
-│  │                 ├── FaucetTool               │  │
-│  │                 ├── SendTool                 │  │
-│  │                 ├── SwapTool                 │  │
-│  │                 ├── PriceTool                │  │
-│  │                 ├── NFTTool                  │  │
-│  │                 ├── MintNFTTool              │  │
-│  │                 ├── CreateTokenTool          │  │
-│  │                 ├── TransactionHistoryTool   │  │
-│  │                 └── OnRampTool (sandbox)     │  │
-│  └──────────────────┬──────────────────────────┘  │
-│                     │                             │
-│  ┌──────────────────┴──────────────────────────┐  │
-│  │           Wallet Abstraction Layer           │  │
-│  │                                              │  │
-│  │  WalletManager + LocalWallet                 │  │
-│  │  CryptoKit Curve25519 (Ed25519 keypair)      │  │
-│  │  Apple Keychain (private key storage)        │  │
-│  └──────────────────┬──────────────────────────┘  │
-│                     │                             │
-│  ┌──────────────────┴──────────────────────────┐  │
-│  │           External Service Layer             │  │
-│  │                                              │  │
-│  │  Solana JSON-RPC — Devnet (public endpoint)  │  │
-│  │  Solana Faucet — Devnet airdrop              │  │
-│  │  Jupiter V6 API — Mainnet quotes only        │  │
-│  │  Helius DAS + cNFT API — Devnet             │  │
-│  │  Circle USDC Faucet — Devnet test tokens    │  │
-│  │  MoonPay — Sandbox (fiat on-ramp URL)        │  │
-│  └─────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│               SolMind Application                    │
+│   SwiftUI · macOS / iOS / iPadOS / visionOS          │
+│                                                     │
+│   SolanaStatsBar ── SolanaStatsViewModel            │
+│   Suggestion chips ── SuggestionEngine              │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  ┌──────────────────────────────────────────────┐   │
+│  │    Apple Foundation Models (On-Device)        │   │
+│  │                                              │   │
+│  │  SystemLanguageModel.default                 │   │
+│  │  LanguageModelSession(instructions:)         │   │
+│  │  System prompt: AIInstructions               │   │
+│  │    + SolanaKnowledge (DeFi/NFTs/staking)     │   │
+│  │  First-message context block:                │   │
+│  │    wallet · balance · USD · stats hint       │   │
+│  │                                              │   │
+│  │  Tool Calling ──┬── BalanceTool              │   │
+│  │                 ├── FaucetTool               │   │
+│  │                 ├── SendTool                 │   │
+│  │                 ├── SwapTool                 │   │
+│  │                 ├── PriceTool                │   │
+│  │                 ├── NFTTool                  │   │
+│  │                 ├── MintNFTTool              │   │
+│  │                 ├── CreateTokenTool          │   │
+│  │                 ├── TransactionHistoryTool   │   │
+│  │                 └── OnRampTool (sandbox)     │   │
+│  └─────────────────┬────────────────────────────┘   │
+│                    │                                │
+│  ┌─────────────────┴────────────────────────────┐   │
+│  │          Wallet Abstraction Layer             │   │
+│  │                                              │   │
+│  │  WalletManager + LocalWallet                 │   │
+│  │  CryptoKit Curve25519 (Ed25519 keypair)      │   │
+│  │  Apple Keychain (private key storage)        │   │
+│  └─────────────────┬────────────────────────────┘   │
+│                    │                                │
+│  ┌─────────────────┴────────────────────────────┐   │
+│  │         External Service Layer               │   │
+│  │                                              │   │
+│  │  Solana JSON-RPC — Devnet (public endpoint)  │   │
+│  │    · getBalance · sendTransaction            │   │
+│  │    · getEpochInfo · getRecentPerfSamples     │   │
+│  │  Solana Faucet — Devnet airdrop              │   │
+│  │  Jupiter V6 API — price oracle + swap        │   │
+│  │  Helius DAS + cNFT API — Devnet             │   │
+│  │  Circle USDC Faucet — Devnet test tokens    │   │
+│  │  MoonPay — Sandbox (fiat on-ramp URL)        │   │
+│  │  UserDefaults — stats + price persistence    │   │
+│  └──────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
 ```
 
 ### 3.2 Foundation Models Integration
@@ -98,22 +108,30 @@ The Foundation Models framework provides three capabilities that map directly to
 
 #### 3.2.1 Text Generation & Understanding
 
-The on-device LLM interprets user intent from natural language. A `LanguageModelSession` is initialized with system-level `Instructions` that define the assistant's role and constraints:
+The on-device LLM interprets user intent from natural language. A `LanguageModelSession` is initialized with system-level `Instructions` that define the assistant's role, constraints, and embedded Solana ecosystem knowledge:
 
 ```swift
-let session = LanguageModelSession(instructions: Instructions("""
-    You are SolMind, a Solana wallet assistant running on DEVNET. Help the 
-    user manage their crypto assets. All tokens are devnet test tokens with 
-    no real value. Use the available tools to check balances, request free 
-    SOL from the faucet, send tokens, swap tokens, check prices, and view 
-    NFTs. Always show a transaction preview before executing any 
-    state-changing operation. Never fabricate wallet addresses or balances 
-    — always call the appropriate tool. When a user's wallet is empty, 
-    suggest using the faucet to get free devnet SOL.
-"""))
+let session = LanguageModelSession(instructions: Instructions(
+    AIInstructions.system  // ~20 rules + SolanaKnowledge.core
+))
 ```
 
-#### 3.2.2 Tool Calling
+The system prompt embeds `SolanaKnowledge.core` — a compressed reference covering Solana's consensus mechanism (PoH + Tower BFT), DeFi protocols (Jupiter, Raydium, Kamino, MarginFi, Drift, Meteora, Jito), NFT standards (cNFTs via Bubblegum, Metaplex Core), staking options (native vs liquid), and wallet security best practices. This allows the model to answer ecosystem questions accurately without any network round-trips, preserving the on-device privacy guarantee.
+
+#### 3.2.2 Session Context Injection
+
+At the start of every new conversation, `ChatViewModel` prepends a context block to the user's first message. This block is constructed by `AIInstructions.contextBlock(...)` and contains the wallet address, current SOL balance, USD equivalent, token count, live network stats summary, and an optional knowledge hint if the opening query matches a specific Solana topic:
+
+```swift
+// Example first-message prefix (prepended once per session, never repeated):
+// [Context: Wallet: 7xKp...3rM | Balance: 5.20 SOL | $728.00 | 3 token(s)
+//  | SOL: $140.00 | Epoch 750 (62%) | TPS: ~2800]
+// [Knowledge hint: Solana staking: Native staking delegates to validators…]
+```
+
+This gives the model immediate awareness of the user's financial context without requiring a `getBalance` tool call on every session start — reducing latency and improving response coherence.
+
+#### 3.2.3 Tool Calling
 
 Each blockchain operation is encapsulated as a `Tool` conformance. When the user says "send 0.5 SOL to 7xKp...", the model identifies that the `sendTokens` tool should be invoked, extracts the parameters (recipient address, amount 0.5, tokenMint nil), and calls the tool. The tool's return value — a signed transaction signature or error — is fed back to the model for natural language response generation.
 
@@ -162,7 +180,7 @@ struct SendTool: Tool {
 }
 ```
 
-#### 3.2.3 Guided Generation
+#### 3.2.4 Guided Generation
 
 For structured outputs, the `@Generable` macro ensures the model produces typed Swift values rather than freeform text. This is critical for transaction previews where accuracy matters:
 
@@ -203,32 +221,74 @@ SolMind uses self-custodial Ed25519 keypairs generated locally on the device usi
 
 This provides full self-custody with zero third-party SDK dependencies.
 
-### 3.4 External Services (Devnet / Sandbox)
+### 3.4 Live Network Intelligence
+
+SolMind surfaces live Solana network data without requiring the user to ask for it.
+
+#### 3.4.1 SolanaNetworkService
+
+`SolanaNetworkService` is a Swift `actor` that fires two concurrent RPC calls every two minutes:
+
+```swift
+async let epochData  = postRPC("getEpochInfo",  params: [])
+async let perfData   = postRPC("getRecentPerformanceSamples", params: [["limit": 1]])
+```
+
+The resulting `SolanaNetworkStats` struct (epoch number, slot index, slot progress, absolute slot, TPS) is:
+- Persisted to `UserDefaults` as a `Codable` blob so the stats bar is never blank on cold launch
+- Published through `SolanaStatsViewModel` (`@Observable @MainActor`) to all views via SwiftUI's environment
+
+#### 3.4.2 SolanaStatsBar
+
+A compact 28pt-height bar at the top of the chat view displays:
+- **SOL price** — from `PriceService` (Jupiter Price API v2, 30s cache)
+- **Epoch progress** — epoch number with an inline capsule progress bar (e.g., `Epoch 750 ▓▓▓▓▓▒▒▒ 62%`)
+- **TPS** — current transactions per second (e.g., `~2,800 TPS`)
+
+A refresh button triggers `SolanaStatsViewModel.refresh()` which re-fetches both price and network stats concurrently.
+
+#### 3.4.3 SuggestionEngine
+
+After every AI response, `SuggestionEngine.suggestions(for:userMessage:walletHasBalance:)` performs keyword matching on the AI response and user message to generate 3–4 relevant follow-up prompts. Examples:
+
+| Context | Suggestions |
+|---|---|
+| Balance response | "Check token balances", "Send SOL", "What's the SOL price?", "Get more devnet SOL" |
+| Swap response | "Check my balance", "Swap more tokens", "What's the SOL price?" |
+| NFT response | "Mint another NFT", "View my NFTs", "Check my balance" |
+| Error response | "Try again", "Check my balance", "Get help" |
+
+Chips are displayed in a horizontal `ScrollView` above the chat input and are cleared the moment the user sends a new message.
+
+### 3.5 External Services (Devnet / Sandbox)
 
 All external services are configured for devnet or sandbox mode. No real funds or mainnet endpoints are used.
 
 | Service | Purpose | Integration | Mode |
 |---|---|---|---|
-| Solana JSON-RPC (public devnet) | Balance queries, transaction submission | URLSession + JSON-RPC 2.0 | **Devnet** |
+| Solana JSON-RPC (public devnet) | Balance, transactions, epoch info, TPS | URLSession + JSON-RPC 2.0 | **Devnet** |
 | Solana Faucet | Free SOL for testing via `requestAirdrop` | Built-in RPC method | **Devnet** |
-| Jupiter V6 API | DEX aggregation for token swaps | REST API (no auth) | **Devnet** |
-| Helius DAS API | Token metadata, NFT data | REST API (API key) | **Devnet** |
+| Jupiter V6 API | DEX aggregation; price oracle (30s cache) | REST API (no auth) | **Devnet** |
+| Helius DAS API | Token metadata, NFT data, cNFT minting | REST API (API key) | **Devnet** |
 | MoonPay | Fiat on-ramp simulation | Sandbox URL opened in browser | **Sandbox** |
 
-### 3.5 Multiplatform Code Sharing
+### 3.6 Multiplatform Code Sharing
 
 All code lives in a single app target with `#if os(...)` branches for platform-specific behavior. No third-party Swift packages are used — the entire implementation depends only on Apple frameworks.
 
 ```
 SolMind/ (single app target)
-├── AI/              # AISession, AIInstructions, 8 Tool conformances
+├── AI/              # AISession, AIInstructions, SolanaKnowledge, SuggestionEngine,
+│                    # 10 Tool conformances
 ├── Solana/          # SolanaClient (actor), TransactionBuilder, Keypair, Base58
 ├── Wallet/          # WalletManager (multi-keypair), LocalWallet (Keychain)
-├── Services/        # JupiterService, HeliusService, PriceService, ConversationStore
-├── Views/           # ChatView, NFTGalleryView, PortfolioView, ConversationSidebar,
-│                    # TransactionPreviewCard, WalletSetupView, WalletPickerView,
-│                    # PortfolioOrnamentView
-├── ViewModels/      # ChatViewModel (@MainActor), WalletViewModel (@MainActor)
+├── Services/        # JupiterService, HeliusService, PriceService,
+│                    # SolanaNetworkService (epoch/TPS), ConversationStore
+├── Views/           # ChatView, MessageBubble, SolanaStatsBar, NFTGalleryView,
+│                    # PortfolioView, ConversationSidebar, TransactionPreviewCard,
+│                    # WalletSetupView, WalletPickerView, PortfolioOrnamentView
+├── ViewModels/      # ChatViewModel (@MainActor), WalletViewModel (@MainActor),
+│                    # SolanaStatsViewModel (@MainActor, @Observable)
 ├── Models/          # ChatMessage, Conversation (Codable), TransactionPreview (@Generable)
 └── Config/          # SolanaConfig, Secrets
 ```
@@ -248,7 +308,10 @@ SolMind's privacy guarantee rests on a simple architectural fact: **the AI model
 |---|---|---|
 | User prompts ("send 0.5 SOL to 7xKp...") | On-device Foundation Models | No |
 | AI inference & tool selection | On-device Foundation Models | No |
+| Solana ecosystem knowledge (DeFi, NFTs…) | Embedded in system prompt — on-device | No |
+| Context injection (wallet, balance, stats) | Built locally — on-device | No |
 | Wallet private keys | CryptoKit Curve25519 + Apple Keychain | No |
+| Network stats (epoch, TPS) | Fetched from public Solana RPC | Yes (public data) |
 | Balance queries | Solana RPC (public data) | Yes (public blockchain data) |
 | Transaction submission | Solana network | Yes (on-chain by nature) |
 | Token prices, metadata | Jupiter / Helius APIs | Yes (public data) |
@@ -291,31 +354,42 @@ Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKe
 
 ### 6.1 Onboarding (30 seconds)
 
-1. Open SolMind — **⚠️ DEVNET** badge visible in toolbar
+1. Open SolMind — **⚠️ DEVNET** badge visible in toolbar; live SOL price + epoch progress shown in stats bar
 2. Tap **Create Wallet** — first Ed25519 keypair generated locally on device
 3. Public address displayed; private key written to Apple Keychain
 4. AI greets with your devnet address and suggests: "Want me to get you some free devnet SOL from the faucet?"
 5. Generate additional wallets anytime via the **Wallets** tab / sidebar entry
 6. Start testing: send, swap, check NFTs — all on devnet with test tokens
+7. After each AI response, contextual suggestion chips appear — tap to continue the conversation naturally
 
 ### 6.2 Example Interactions
 
-**Balance check:**
+**Balance check (with context):**
 > "How much SOL do I have?"
-> → AI calls `getBalance` → "You have 12.45 SOL (devnet, ~$1,580 equivalent)"
+> → Session starts with context block injected (wallet + balance already known to AI)
+> → AI may respond immediately without calling `getBalance`: "You have 5.20 SOL (~$728)"
+> → Suggestion chips appear: ["Check token balances", "What's the SOL price?", "Send SOL", "Get more devnet SOL"]
 
 **Faucet airdrop:**
 > "I need some SOL to test with"
-> → AI calls `getFromFaucet` → "Airdropped 1 SOL to your devnet wallet. Balance is now 13.45 SOL."
+> → AI calls `getFromFaucet` → "Airdropped 1 SOL to your devnet wallet. Balance is now 6.20 SOL."
+> → Suggestion chips appear: ["Check my balance", "Send SOL", "Swap tokens", "Mint an NFT"]
 
 **Token transfer:**
 > "Send 0.5 SOL to 3A5vT2..."
 > → AI calls `sendTokens` → preview card: "⚠️ DEVNET — Send 0.5 SOL to 3A5vT2..." → user confirms → "Sent! TX: 5xA3..."
+> → AI response rendered with **bold** and inline `code` via AttributedString markdown
+> → Response time shown in toolbar: "0.8s"
 
 **Swap:**
 > "Swap 0.1 SOL for USDC"
 > → AI calls `swapTokens` via Jupiter → preview → confirm → done
 > (Note: Jupiter is mainnet-only; on devnet the quote will fail and AI explains the limitation)
+
+**Ecosystem question (no tool needed):**
+> "What is Jito and how does it work?"
+> → AI answers from embedded `SolanaKnowledge` — no external call, fully on-device
+> → Suggestion chips: ["How do I stake SOL?", "What's MEV?", "Get SOL price"]
 
 **Mint an NFT:**
 > "Mint me an NFT called SolMind Pioneer"
@@ -325,9 +399,14 @@ Private keys are generated locally using `CryptoKit.Curve25519.Signing.PrivateKe
 > "Create a token called SolDEMO with 1 million supply"
 > → AI calls `createToken` → two transactions sent (createMint + mintTokens) → mint address returned
 
+**Network stats question:**
+> "What epoch are we in?"
+> → AI answers from injected context block: "We're in epoch 750, about 62% through"
+> → Live stats also visible in the SolanaStatsBar at the top of chat
+
 **Portfolio overview:**
 > "Show me everything I have"
-> → AI calls `getBalance` (all tokens) + `getNFTs` → renders portfolio view
+> → AI calls `getBalance` (all tokens) + `getNFTs` → Portfolio tab shows total USD value header + recent activity
 
 **Fiat on-ramp:**
 > "I want to buy $200 worth of SOL"

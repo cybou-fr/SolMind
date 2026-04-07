@@ -91,7 +91,7 @@ class ChatViewModel {
         isProcessing = true
         currentSuggestions = []
 
-        var assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
+        let assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
         activeConversation?.messages.append(assistantMsg)
         let msgIndex = (activeConversation?.messages.count ?? 1) - 1
 
@@ -129,16 +129,41 @@ class ChatViewModel {
             )
 
         } catch AIError.contextWindowExceeded {
-            activeConversation?.messages[msgIndex].content = """
-            ⚠️ The conversation became too long and the context window was exceeded. \
-            The session has been reset automatically.
+            // Auto-reset the session and retry the same request once in the fresh context.
+            aiSession.reset()
+            hasInjectedContext = false
+            let retryPrompt = buildContextualPrompt(userText: trimmed)
+            do {
+                let start = Date()
+                let retryResponse = try await collectStream(retryPrompt)
+                lastResponseTime = Date().timeIntervalSince(start)
+                activeConversation?.messages[msgIndex].content = retryResponse
+                activeConversation?.messages[msgIndex].isStreaming = false
+                if isSuspiciousResponse(retryResponse) {
+                    activeConversation?.messages[msgIndex].content = """
+                    ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
 
-            **Your last action was NOT executed.** Please start a new chat (⌘K) and repeat your request.
-            """
-            activeConversation?.messages[msgIndex].isStreaming = false
+                    SolMind will NEVER ask for your private key. If you see such a request, it is a scam attempt. Your wallet is managed securely on-device.
+                    """
+                }
+                if activeConversation?.messages.count == 2,
+                   let title = activeConversation?.messages.first?.content {
+                    activeConversation?.title = String(title.prefix(40))
+                }
+                currentSuggestions = SuggestionEngine.suggestions(
+                    for: retryResponse,
+                    userMessage: trimmed,
+                    walletHasBalance: (walletVM?.solBalance ?? 0) > 0
+                )
+            } catch {
+                activeConversation?.messages[msgIndex].content = """
+                ⚠️ The conversation context window was exceeded and could not be recovered. \
+                Please start a new chat (⌘K) and repeat your request.
+                """
+                activeConversation?.messages[msgIndex].isStreaming = false
+            }
             isProcessing = false
             persistActive()
-            newConversation()
             return
         } catch {
             activeConversation?.messages[msgIndex].content = error.localizedDescription

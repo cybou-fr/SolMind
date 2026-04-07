@@ -24,6 +24,11 @@ struct PortfolioOrnamentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let total = walletViewModel.totalPortfolioUSD {
+                Text(total, format: .currency(code: "USD"))
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+            }
 
             if !walletViewModel.tokenBalances.isEmpty {
                 Divider()

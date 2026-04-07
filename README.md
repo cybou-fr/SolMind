@@ -31,49 +31,80 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 - **Faucet built-in** — say "give me some SOL" and the AI airdrops free devnet SOL; Circle USDC faucet also linked
 - **Truly multiplatform** — macOS 26 primary + iOS 26 + iPadOS 26 + visionOS 26, single codebase
 - **Self-custodial multi-wallet** — generate unlimited Ed25519 keypairs; each stored separately in Apple Keychain; switch or delete at any time
+- **Live network stats bar** — compact bar shows real-time SOL price (Jupiter), current epoch + progress, and live TPS fetched from Solana RPC
+- **Contextual AI suggestions** — keyword-driven engine surfaces 3–4 relevant follow-up chips after every AI response
+- **Deep Solana knowledge** — compressed ecosystem knowledge base (DeFi, NFTs, staking, wallets) injected into the AI system prompt; network stats context prepended to every new session
+- **Portfolio USD values** — total portfolio value, per-token USD values, and recent transaction history in the Portfolio tab
+- **Markdown AI responses** — bold, italic, and inline code rendered natively in chat bubbles via `AttributedString`
+- **AI response time** — response latency shown in toolbar (e.g., "1.3s") for transparency
 
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────┐
-│       Multiplatform App (SwiftUI)             │
-│  macOS 26 · iOS 26 · iPadOS 26 · visionOS 26  │
-├───────────────────────────────────────────────┤
-│  Apple Foundation Models (on-device LLM)      │
-│  LanguageModelSession + Tool Calling          │
-│  → Balance, Faucet, Send, Swap,               │
-│     Price, NFTs, MintNFT, CreateToken,        │
-│     TxHistory, OnRamp                         │
-├───────────────────────────────────────────────┤
-│  Wallet: Ed25519 keypair in Apple Keychain    │
-├───────────────────────────────────────────────┤
-│  Solana RPC (devnet) · Jupiter · Helius       │
-│  MoonPay (sandbox) · PriceService             │
-└───────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────┐
+│          Multiplatform App (SwiftUI)                │
+│   macOS 26 · iOS 26 · iPadOS 26 · visionOS 26      │
+│                                                    │
+│  SolanaStatsBar ── SolanaStatsViewModel            │
+│  Suggestion chips ── SuggestionEngine              │
+├────────────────────────────────────────────────────┤
+│  Apple Foundation Models (on-device LLM)           │
+│  LanguageModelSession + Tool Calling               │
+│  System prompt: AIInstructions + SolanaKnowledge   │
+│  Context injection: wallet · balance · stats       │
+│  → Balance, Faucet, Send, Swap,                    │
+│     Price, NFTs, MintNFT, CreateToken,             │
+│     TxHistory, OnRamp                              │
+├────────────────────────────────────────────────────┤
+│  Wallet: Ed25519 keypairs in Apple Keychain        │
+├────────────────────────────────────────────────────┤
+│  Solana RPC (devnet) · Jupiter · Helius            │
+│  MoonPay (sandbox) · PriceService                  │
+│  SolanaNetworkService (epoch + TPS)                │
+│  UserDefaults (stats + price persistence)          │
+└────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
 
 ```
 SolMind/
-├── SolMind/                  # Single app target (macOS + iOS + visionOS)
-│   ├── SolMindApp.swift      # App entry point
-│   ├── ContentView.swift     # Root navigation (AppDestination enum)
-│   ├── Config/               # SolanaConfig, Secrets
-│   ├── Models/               # ChatMessage, Conversation, TransactionPreview, WalletState
+├── SolMind/                        # Single app target (macOS + iOS + visionOS)
+│   ├── SolMindApp.swift            # App entry point; injects SolanaStatsViewModel
+│   ├── ContentView.swift           # Root navigation (AppDestination enum)
+│   ├── Config/                     # SolanaConfig, Secrets
+│   ├── Models/                     # ChatMessage, Conversation, TransactionPreview, WalletState
 │   ├── AI/
-│   │   ├── AISession.swift   # LanguageModelSession wrapper
-│   │   ├── AIInstructions.swift
-│   │   └── Tools/            # 10 Tool conformances
-│   ├── Solana/               # SolanaClient, TransactionBuilder (SOL + SPL), Keypair, Base58
-│   ├── Wallet/               # WalletManager (multi-keypair), LocalWallet (Keychain)
-│   ├── Services/             # JupiterService, HeliusService, PriceService, ConversationStore
-│   ├── Views/                # ChatView, MessageBubble, TransactionPreviewCard,
-│   │                         # PortfolioView, NFTGalleryView, WalletSetupView,
-│   │                         # WalletPickerView, ConversationSidebar,
-│   │                         # DevnetBadge, PortfolioOrnamentView
-│   └── ViewModels/           # ChatViewModel, WalletViewModel
-├── SolMindTests/             # Unit tests (Base58, CompactU16, TransactionBuilder)
+│   │   ├── AISession.swift         # LanguageModelSession wrapper
+│   │   ├── AIInstructions.swift    # System prompt + contextBlock() for first-message injection
+│   │   ├── SolanaKnowledge.swift   # Compressed Solana ecosystem knowledge base (DeFi, NFTs, staking…)
+│   │   ├── SuggestionEngine.swift  # Keyword-driven contextual follow-up suggestion generator
+│   │   └── Tools/                  # 10 Tool conformances
+│   ├── Solana/                     # SolanaClient, TransactionBuilder (SOL + SPL), Keypair, Base58
+│   ├── Wallet/                     # WalletManager (multi-keypair), LocalWallet (Keychain)
+│   ├── Services/
+│   │   ├── JupiterService.swift    # Jupiter V6 swap quotes & execution
+│   │   ├── HeliusService.swift     # DAS API for NFTs & token metadata
+│   │   ├── PriceService.swift      # Token price lookups (Jupiter Price API v2, 30s cache)
+│   │   ├── SolanaNetworkService.swift  # actor: getEpochInfo + getRecentPerformanceSamples, 2-min cache
+│   │   └── ConversationStore.swift # JSON persistence in Application Support
+│   ├── Views/
+│   │   ├── ChatView.swift          # Chat UI: SolanaStatsBar, suggestion chips, AI stats toolbar
+│   │   ├── MessageBubble.swift     # Markdown rendering + TypingIndicator (.task animation)
+│   │   ├── SolanaStatsBar.swift    # Compact bar: SOL price · epoch progress · TPS
+│   │   ├── TransactionPreviewCard.swift
+│   │   ├── PortfolioView.swift     # Total portfolio USD, token list, recent activity
+│   │   ├── NFTGalleryView.swift
+│   │   ├── WalletSetupView.swift
+│   │   ├── WalletPickerView.swift
+│   │   ├── ConversationSidebar.swift
+│   │   ├── DevnetBadge.swift
+│   │   └── PortfolioOrnamentView.swift  # visionOS ornament
+│   └── ViewModels/
+│       ├── ChatViewModel.swift     # Chat state, context injection, suggestions, response time
+│       ├── WalletViewModel.swift   # Wallet state, USD values, total portfolio, tx history
+│       └── SolanaStatsViewModel.swift  # @Observable: price + network stats, UserDefaults persistence
+├── SolMindTests/                   # Unit tests (Base58, CompactU16, TransactionBuilder)
 └── SolMind.xcodeproj/
 ```
 
@@ -89,7 +120,7 @@ SolMind/
 | Swaps | Jupiter V6 API (devnet) |
 | Token/NFT data | Helius DAS API (devnet) |
 | Fiat on-ramp | MoonPay (sandbox URL) |
-| Persistence | JSON files in Application Support (`ConversationStore`) |
+| Persistence | JSON files in Application Support (`ConversationStore`); `UserDefaults` for network stats + SOL price (cold-launch display) |
 | Dependencies | **Zero** — no third-party Swift packages |
 
 ## AI Tools

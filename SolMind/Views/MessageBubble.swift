@@ -46,13 +46,25 @@ struct MessageBubble: View {
     private var bubbleContent: some View {
         if message.isStreaming {
             HStack(spacing: 4) {
-                Text(message.content.isEmpty ? "" : message.content)
+                markdownText(message.content)
                 TypingIndicator()
             }
         } else {
-            Text(message.content)
+            markdownText(message.content)
                 .textSelection(.enabled)
                 .multilineTextAlignment(isLeading ? .trailing : .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func markdownText(_ raw: String) -> some View {
+        if let attributed = try? AttributedString(
+            markdown: raw,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            Text(attributed)
+        } else {
+            Text(raw)
         }
     }
 
@@ -103,11 +115,13 @@ struct TypingIndicator: View {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
                     .frame(width: 6, height: 6)
-                    .opacity(phase == i ? 1 : 0.3)
+                    .opacity(phase == i ? 1.0 : 0.3)
+                    .animation(.easeInOut(duration: 0.3), value: phase)
             }
         }
-        .onAppear {
-            withAnimation(.linear(duration: 0.9).repeatForever()) {
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(400))
                 phase = (phase + 1) % 3
             }
         }

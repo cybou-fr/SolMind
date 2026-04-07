@@ -7,11 +7,22 @@ import Foundation
 class WalletViewModel {
     var walletManager = WalletManager()
     var solBalance: Double = 0
+    var solUSDValue: Double?
     var tokenBalances: [TokenBalance] = []
+    var recentTransactions: [TransactionModel] = []
     var isLoading = false
+    var isLoadingTransactions = false
     var setupError: String?
 
+    /// Total portfolio value in USD (SOL + tokens). Nil until prices are loaded.
+    var totalPortfolioUSD: Double? {
+        guard let solUSD = solUSDValue else { return nil }
+        let tokenUSD = tokenBalances.compactMap(\.usdValue).reduce(0, +)
+        return solUSD + tokenUSD
+    }
+
     private let solanaClient = SolanaClient()
+    private let priceService = PriceService()
 
     var isWalletReady: Bool { walletManager.isConnected }
     var publicKey: String? { walletManager.publicKey }
@@ -63,9 +74,17 @@ class WalletViewModel {
     func refreshBalance() async {
         guard let pk = walletManager.publicKey else { return }
         do {
-            solBalance = try await solanaClient.getSOLBalance(publicKey: pk)
-            let tokenAccounts = try await solanaClient.getTokenAccounts(owner: pk)
-            tokenBalances = tokenAccounts.map { account in
+            async let balanceFetch = solanaClient.getSOLBalance(publicKey: pk)
+            async let tokenFetch = solanaClient.getTokenAccounts(owner: pk)
+
+            let (balance, tokenAccounts) = try await (balanceFetch, tokenFetch)
+            solBalance = balance
+
+            let solPrice: Double? = (try? await priceService.getPrice(symbol: "SOL")) ?? nil
+            solUSDValue = solPrice.map { balance * $0 }
+
+            // Fetch token prices concurrently for known tokens
+            var tokens = tokenAccounts.map { account in
                 TokenBalance(
                     mint: account.mint,
                     symbol: knownSymbol(for: account.mint),
@@ -74,8 +93,46 @@ class WalletViewModel {
                     rawAmount: account.rawAmount
                 )
             }
+            await withTaskGroup(of: (Int, Double?).self) { group in
+                for (index, token) in tokens.enumerated() {
+                    let symbol = token.symbol
+                    let uiAmount = token.uiAmount
+                    group.addTask {
+                        let price = try? await self.priceService.getPrice(symbol: symbol)
+                        let usdValue: Double? = price.map { uiAmount * $0 }
+                        return (index, usdValue)
+                    }
+                }
+                for await (index, usdValue) in group {
+                    tokens[index].usdValue = usdValue
+                }
+            }
+            tokenBalances = tokens
         } catch {
             // Balance errors are non-fatal — keep existing values
+        }
+    }
+
+    // MARK: - Transaction History
+
+    func refreshTransactionHistory() async {
+        guard let pk = walletManager.publicKey else { return }
+        isLoadingTransactions = true
+        defer { isLoadingTransactions = false }
+        do {
+            let sigs = try await solanaClient.getSignaturesForAddress(publicKey: pk, limit: 10)
+            recentTransactions = sigs.map { sig in
+                TransactionModel(
+                    signature: sig.signature,
+                    slot: sig.slot,
+                    blockTime: sig.blockTime,
+                    fee: 0,
+                    isSuccess: sig.err == nil,
+                    memo: sig.memo
+                )
+            }
+        } catch {
+            // Non-fatal — keep existing list
         }
     }
 
