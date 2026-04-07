@@ -74,7 +74,8 @@ class ChatViewModel {
             MintNFTTool(walletManager: walletManager, heliusService: heliusService, confirmationHandler: confirmationHandler),
             CreateTokenTool(walletManager: walletManager, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
-            OnRampTool(walletManager: walletManager)
+            OnRampTool(walletManager: walletManager),
+            AnalyzeProgramTool(solanaClient: solanaClient)
         ]
         aiSession.initialize(tools: tools)
     }

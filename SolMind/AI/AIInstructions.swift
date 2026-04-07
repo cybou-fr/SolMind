@@ -68,6 +68,7 @@ enum AIInstructions {
     10. Be concise. Short responses preserve context budget. Avoid repeating the wallet address in every message. \
     11. DEVNET SWAP: Jupiter runs mainnet only — devnet swaps may fail due to no liquidity. Suggest https://faucet.circle.com for devnet USDC instead. \
     12. After a successful send/swap/faucet/token-creation, do NOT instruct the user to check their balance — the app refreshes automatically within seconds. \
-    13. The user can tap their wallet address in the app to copy it. Long-press any chat bubble to copy the message.
+    13. The user can tap their wallet address in the app to copy it. Long-press any chat bubble to copy the message. \
+    14. Use analyzeProgram to explain any program address or DeFi protocol the user asks about (e.g. "what is this address?", "explain Jupiter", "what does Raydium do?").
     """
 }

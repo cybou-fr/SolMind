@@ -106,6 +106,25 @@ actor SolanaClient {
         return signature
     }
 
+    // MARK: - getAccountInfo
+
+    /// Returns on-chain account metadata for any address.
+    /// Returns nil if the account does not exist.
+    func getAccountInfo(address: String) async throws -> OnChainAccountInfo? {
+        let body: [String: Any] = [
+            "jsonrpc": "2.0",
+            "id": nextID(),
+            "method": "getAccountInfo",
+            "params": [
+                address,
+                ["encoding": "base64", "commitment": "confirmed"]
+            ]
+        ]
+        let data = try await postRaw(body: body)
+        let decoded = try JSONDecoder().decode(RPCResponse<AccountInfoResult>.self, from: data)
+        return decoded.result?.value
+    }
+
     // MARK: - getSignaturesForAddress
 
     func getSignaturesForAddress(publicKey: String, limit: Int = 10) async throws -> [SignatureInfo] {

@@ -90,6 +90,20 @@ struct SignatureInfo: Decodable, Sendable {
 
 struct CodableNull: Decodable, Sendable {}
 
+// MARK: - getAccountInfo
+
+struct AccountInfoResult: Decodable, Sendable {
+    let value: OnChainAccountInfo?
+}
+
+struct OnChainAccountInfo: Decodable, Sendable {
+    let lamports: UInt64
+    let owner: String
+    let executable: Bool
+    let rentEpoch: UInt64?
+    // data field omitted — not needed for analysis, Decodable ignores extra fields
+}
+
 // MARK: - getTransaction / simplified
 
 struct TransactionDetail: Decodable, Sendable {
