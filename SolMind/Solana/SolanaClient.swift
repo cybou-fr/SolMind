@@ -155,14 +155,39 @@ actor SolanaClient {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = bodyData
-        let (data, _) = try await urlSession.data(for: urlRequest)
-        return data
+
+        // Retry up to 3 times on transient network errors with exponential backoff
+        var lastError: Error?
+        for attempt in 0..<3 {
+            do {
+                let (data, _) = try await urlSession.data(for: urlRequest)
+                return data
+            } catch let urlError as URLError where isTransientURLError(urlError) && attempt < 2 {
+                lastError = urlError
+                // 500 ms, 1 000 ms
+                let nanoseconds = UInt64(500_000_000) * UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                throw error
+            }
+        }
+        throw lastError ?? URLError(.unknown)
+    }
+
+    private func isTransientURLError(_ error: URLError) -> Bool {
+        switch error.code {
+        case .timedOut, .notConnectedToInternet, .networkConnectionLost,
+             .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return true
+        default:
+            return false
+        }
     }
 }
 
 // MARK: - getSignatureStatuses response additions
 
-struct SignatureStatus: Decodable {
+struct SignatureStatus: Decodable, Sendable {
     let slot: UInt64
     let confirmations: Int?
     let err: AnyCodable?
@@ -170,4 +195,4 @@ struct SignatureStatus: Decodable {
 }
 
 // Simple wrapper for unknown JSON values
-struct AnyCodable: Decodable {}
+struct AnyCodable: Decodable, Sendable {}

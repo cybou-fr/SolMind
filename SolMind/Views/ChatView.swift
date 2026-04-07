@@ -120,18 +120,59 @@ struct ChatView: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 20) {
+            // Logo
             Image(systemName: "brain.head.profile.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("SolMind")
-                .font(.title2.bold())
-            Text("Your AI-powered Solana wallet assistant.\nAll transactions are on **devnet** — test money only.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                .font(.system(size: 56))
+                .foregroundStyle(.tint)
+                .symbolRenderingMode(.hierarchical)
 
-            // Static starter suggestions
+            VStack(spacing: 6) {
+                Text("SolMind")
+                    .font(.title.bold())
+                Text("AI-powered Solana wallet assistant")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Wallet status card (shown once wallet is ready)
+            if walletViewModel.isWalletReady {
+                VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        Circle().fill(.green).frame(width: 7, height: 7)
+                        Text(walletViewModel.displayAddress)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                    if walletViewModel.solBalance > 0 {
+                        HStack(alignment: .lastTextBaseline, spacing: 3) {
+                            Text(walletViewModel.solBalance, format: .number.precision(.fractionLength(4)))
+                                .font(.headline.monospacedDigit())
+                            Text("SOL")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("0 SOL — ask SolMind for a devnet airdrop!")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            // Feature capability bullets
+            VStack(alignment: .leading, spacing: 8) {
+                featureRow("drop.fill", "Request devnet SOL from faucet", .blue)
+                featureRow("paperplane.fill", "Send SOL & SPL tokens", .purple)
+                featureRow("arrow.2.squarepath", "Swap tokens via Jupiter DEX", .green)
+                featureRow("photo.artframe", "Mint compressed NFTs", .pink)
+            }
+            .padding(.horizontal, 8)
+
+            // Starter suggestion chips
             let starters = [
                 "What's my balance?",
                 "Give me some devnet SOL",
@@ -140,8 +181,21 @@ struct ChatView: View {
             ]
             suggestionChipsRow(starters)
         }
-        .padding(40)
+        .padding(32)
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private func featureRow(_ icon: String, _ label: String, _ color: Color) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+                .frame(width: 20)
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 
     /// Horizontal scrollable suggestion chips

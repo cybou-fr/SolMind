@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Individual Message Bubble
 
@@ -22,6 +27,18 @@ struct MessageBubble: View {
                     .background(bubbleBackground)
                     .clipShape(bubbleShape)
                     .foregroundStyle(foregroundColor)
+                    .contextMenu {
+                        Button {
+                            #if os(iOS)
+                            UIPasteboard.general.string = message.content
+                            #elseif os(macOS)
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(message.content, forType: .string)
+                            #endif
+                        } label: {
+                            Label("Copy Message", systemImage: "doc.on.doc")
+                        }
+                    }
 
                 Text(message.timestamp.formatted(.dateTime.hour().minute()))
                     .font(.caption2)

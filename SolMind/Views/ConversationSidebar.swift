@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - macOS / visionOS Conversation Sidebar
 
@@ -6,6 +11,7 @@ struct ConversationSidebar: View {
     @Environment(ChatViewModel.self) private var chatViewModel
     @Environment(WalletViewModel.self) private var walletViewModel
     @Binding var selectedDestination: AppDestination
+    @State private var addressCopied = false
 
     var body: some View {
         List {
@@ -58,6 +64,22 @@ struct ConversationSidebar: View {
                 .help("New Chat (⌘N)")
                 .keyboardShortcut("n", modifiers: .command)
             }
+        }
+    }
+
+    // MARK: - Clipboard
+
+    private func copyAddress(_ address: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = address
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(address, forType: .string)
+        #endif
+        withAnimation { addressCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { addressCopied = false }
         }
     }
 
@@ -125,9 +147,20 @@ struct ConversationSidebar: View {
     private var walletCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(walletViewModel.displayAddress)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                Button {
+                    copyAddress(walletViewModel.publicKey ?? "")
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(walletViewModel.displayAddress)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                        Image(systemName: addressCopied ? "checkmark" : "doc.on.doc")
+                            .font(.caption2)
+                            .foregroundStyle(addressCopied ? .green : .secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Copy wallet address")
                 Spacer()
                 Circle()
                     .fill(walletViewModel.isWalletReady ? Color.green : Color.gray)

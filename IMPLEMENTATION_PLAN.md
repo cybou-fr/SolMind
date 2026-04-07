@@ -1,11 +1,11 @@
 # SolMind — Detailed Implementation Plan
 
-> **Status:** Day 2 — Phases 0–6 complete. Post-submission polish in progress.
+> **Status:** Post-submission polish. Phases 0–6 complete. Reliability, UX, and resilience improvements in progress.
 > **Targets:** macOS 26.4 (primary), iOS 26.4, iPadOS 26.4, visionOS 26.4
 > **Network:** Solana Devnet only
 > **Bundle ID:** `fr.cybou.SolMind`
 > **Team:** `9W74HUTJJL`
-> **Last updated:** April 7, 2026 (AI context injection, SolanaKnowledge, SuggestionEngine, SolanaNetworkService, SolanaStatsViewModel, SolanaStatsBar, portfolio USD values, markdown rendering)
+> **Last updated:** April 7, 2026 (network retry, auto-balance refresh after tools, haptic feedback, tap-to-copy address, message context menu, enhanced empty states, Sendable RPC models, isSuspiciousResponse improved, dual TypingIndicator fix, AISession stream cancellation, PriceService.shared singleton)
 
 ---
 
@@ -75,6 +75,16 @@
 | Multi-keypair wallets | ✅ Generate, switch, delete; legacy migration; WalletPickerView |
 | Unit tests | ✅ Base58 roundtrip/known address, CompactU16, SOL transfer serialization length |
 | Phantom deeplinks | ❌ P3 stretch — not implemented |
+| Network retry | ✅ `SolanaClient.postRaw` retries up to 3× with 500ms/1000ms backoff on transient URLErrors |
+| Auto-balance refresh | ✅ `ChatViewModel.scheduleBalanceRefreshIfNeeded` — detects successful tool responses and refreshes balance (3s send/swap, 6s airdrop) |
+| iOS haptic feedback | ✅ `UINotificationFeedbackGenerator` on confirm, `UIImpactFeedbackGenerator(style:.light)` on cancel |
+| Tap-to-copy address | ✅ `PortfolioView` + `ConversationSidebar` — 2s animated checkmark confirmation |
+| Message copy context menu | ✅ Long-press bubble → "Copy Message" (cross-platform) |
+| AISession task leak fix | ✅ `continuation.onTermination` cancels inner Task; `Task.isCancelled` checked in stream loop |
+| PriceService singleton | ✅ `PriceService.shared` — prevents duplicate caches across ViewModels |
+| Dual TypingIndicator fix | ✅ Removed standalone indicator from ChatView (MessageBubble handles it) |
+| Enhanced empty state | ✅ ChatView: live wallet card + feature bullets; PortfolioView: zero-balance onboarding nudge; NFT: improved guidance |
+| Sendable RPC models | ✅ All structs in `RPCResponse.swift` + `SignatureStatus`/`AnyCodable` in `SolanaClient.swift` |
 
 ### Architecture decision record
 > **Flat structure in app target (no Swift Packages for MVP)**  
@@ -842,7 +852,7 @@ Create `Views/PortfolioView.swift`:
 - iOS compact layout ✅ TabView, ⚠️ keyboard docking needs improvement
 - iPadOS multi-column layout ✅ (inherits macOS NavigationSplitView via size class)
 - visionOS spatial window + ornament ✅
-- Error handling & edge cases ✅ basic, ⚠️ network retry not implemented
+- Error handling & edge cases ✅ network retry implemented (3× exponential backoff in SolanaClient.postRaw)
 - Conversation persistence ✅ JSON files in Application Support
 - Unit tests ⚠️ pending
 

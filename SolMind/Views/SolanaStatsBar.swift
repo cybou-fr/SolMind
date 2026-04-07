@@ -5,6 +5,7 @@ import SwiftUI
 
 struct SolanaStatsBar: View {
     @Environment(SolanaStatsViewModel.self) private var statsVM
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         HStack(spacing: 0) {
@@ -84,6 +85,12 @@ struct SolanaStatsBar: View {
                 if !Task.isCancelled {
                     await statsVM.refresh()
                 }
+            }
+        }
+        // Refresh when app returns to foreground
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await statsVM.refresh() }
             }
         }
     }

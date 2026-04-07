@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Transaction Preview Confirmation Card
 
@@ -55,13 +58,23 @@ struct TransactionPreviewCard: View {
 
             // Action buttons
             HStack(spacing: 12) {
-                Button(role: .destructive) { onCancel() } label: {
+                Button(role: .destructive) {
+                    #if os(iOS)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    #endif
+                    onCancel()
+                } label: {
                     Label("Cancel", systemImage: "xmark")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
 
-                Button { onConfirm() } label: {
+                Button {
+                    #if os(iOS)
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    #endif
+                    onConfirm()
+                } label: {
                     Label("Confirm", systemImage: "checkmark")
                         .frame(maxWidth: .infinity)
                 }

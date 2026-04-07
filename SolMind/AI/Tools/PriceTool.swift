@@ -9,7 +9,7 @@ struct PriceTool: Tool {
 
     private let priceService: PriceService
 
-    init(priceService: PriceService = PriceService()) {
+    init(priceService: PriceService = PriceService.shared) {
         self.priceService = priceService
     }
 

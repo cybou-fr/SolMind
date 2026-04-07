@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Portfolio View
 
@@ -6,6 +11,7 @@ struct PortfolioView: View {
     @Environment(WalletViewModel.self) private var walletViewModel
     @State private var isRefreshing = false
     @State private var rotationDegrees: Double = 0
+    @State private var addressCopied = false
 
     var body: some View {
         List {
@@ -64,9 +70,20 @@ struct PortfolioView: View {
                 }
                 .padding(.vertical, 4)
 
-                Text(walletViewModel.displayAddress)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                Button {
+                    copyAddress(walletViewModel.publicKey ?? "")
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(walletViewModel.displayAddress)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                        Image(systemName: addressCopied ? "checkmark" : "doc.on.doc")
+                            .font(.caption2)
+                            .foregroundStyle(addressCopied ? .green : .secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Copy wallet address")
             }
 
             // Token Balances
@@ -123,6 +140,28 @@ struct PortfolioView: View {
                 }
             }
 
+            // Zero-balance onboarding nudge
+            if walletViewModel.solBalance == 0 && walletViewModel.tokenBalances.isEmpty {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Get started with devnet SOL", systemImage: "drop.fill")
+                            .font(.headline)
+                        Text("Your wallet is empty. Request free devnet SOL from the faucet to start experimenting — no real money involved.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            Task { _ = try? await walletViewModel.requestAirdrop(solAmount: 2.0) }
+                        } label: {
+                            Label("Request 2 Devnet SOL", systemImage: "arrow.down.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
             // Quick Actions
             Section("Quick Actions") {
                 Button {
@@ -142,6 +181,22 @@ struct PortfolioView: View {
             if walletViewModel.recentTransactions.isEmpty {
                 await walletViewModel.refreshTransactionHistory()
             }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func copyAddress(_ address: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = address
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(address, forType: .string)
+        #endif
+        withAnimation { addressCopied = true }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { addressCopied = false }
         }
     }
 

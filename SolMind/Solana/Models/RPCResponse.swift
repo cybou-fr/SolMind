@@ -16,7 +16,7 @@ struct RPCResponse<T: Decodable>: Decodable {
     let error: RPCError?
 }
 
-struct RPCError: Decodable, LocalizedError {
+struct RPCError: Decodable, Sendable, LocalizedError {
     let code: Int
     let message: String
     var errorDescription: String? { message }
@@ -24,53 +24,53 @@ struct RPCError: Decodable, LocalizedError {
 
 // MARK: - getBalance
 
-struct BalanceResult: Decodable {
+struct BalanceResult: Decodable, Sendable {
     let value: UInt64
 }
 
 // MARK: - getLatestBlockhash
 
-struct BlockhashResponse: Decodable {
+struct BlockhashResponse: Decodable, Sendable {
     let value: BlockhashValue
 }
 
-struct BlockhashValue: Decodable {
+struct BlockhashValue: Decodable, Sendable {
     let blockhash: String
     let lastValidBlockHeight: UInt64
 }
 
 // MARK: - getTokenAccountsByOwner
 
-struct TokenAccountsResponse: Decodable {
+struct TokenAccountsResponse: Decodable, Sendable {
     let value: [TokenAccountInfo]
 }
 
-struct TokenAccountInfo: Decodable {
+struct TokenAccountInfo: Decodable, Sendable {
     let pubkey: String
     let account: AccountData
 }
 
-struct AccountData: Decodable {
+struct AccountData: Decodable, Sendable {
     let data: ParsedAccountData
 }
 
-struct ParsedAccountData: Decodable {
+struct ParsedAccountData: Decodable, Sendable {
     let parsed: ParsedInfo
     let program: String
 }
 
-struct ParsedInfo: Decodable {
+struct ParsedInfo: Decodable, Sendable {
     let info: TokenInfo
     let type: String
 }
 
-struct TokenInfo: Decodable {
+struct TokenInfo: Decodable, Sendable {
     let mint: String
     let owner: String
     let tokenAmount: TokenAmountInfo
 }
 
-struct TokenAmountInfo: Decodable {
+struct TokenAmountInfo: Decodable, Sendable {
     let amount: String
     let decimals: Int
     let uiAmount: Double?
@@ -78,7 +78,7 @@ struct TokenAmountInfo: Decodable {
 
 // MARK: - getSignaturesForAddress
 
-struct SignatureInfo: Decodable {
+struct SignatureInfo: Decodable, Sendable {
     let signature: String
     let slot: UInt64?
     let err: CodableNull?
@@ -88,17 +88,17 @@ struct SignatureInfo: Decodable {
 
 // MARK: - Helper for nullable fields
 
-struct CodableNull: Decodable {}
+struct CodableNull: Decodable, Sendable {}
 
 // MARK: - getTransaction / simplified
 
-struct TransactionDetail: Decodable {
+struct TransactionDetail: Decodable, Sendable {
     let slot: UInt64
     let blockTime: Int64?
     let meta: TransactionMeta?
 }
 
-struct TransactionMeta: Decodable {
+struct TransactionMeta: Decodable, Sendable {
     let fee: UInt64
     let err: CodableNull?
     var isSuccess: Bool { err == nil }

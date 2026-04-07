@@ -31,12 +31,18 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 - **Faucet built-in** — say "give me some SOL" and the AI airdrops free devnet SOL; Circle USDC faucet also linked
 - **Truly multiplatform** — macOS 26 primary + iOS 26 + iPadOS 26 + visionOS 26, single codebase
 - **Self-custodial multi-wallet** — generate unlimited Ed25519 keypairs; each stored separately in Apple Keychain; switch or delete at any time
-- **Live network stats bar** — compact bar shows real-time SOL price (Jupiter), current epoch + progress, and live TPS fetched from Solana RPC
+- **Live network stats bar** — compact bar shows real-time SOL price (Jupiter), current epoch + progress, and live TPS fetched from Solana RPC; auto-refreshes every 60 seconds
 - **Contextual AI suggestions** — keyword-driven engine surfaces 3–4 relevant follow-up chips after every AI response
 - **Deep Solana knowledge** — compressed ecosystem knowledge base (DeFi, NFTs, staking, wallets) injected into the AI system prompt; network stats context prepended to every new session
 - **Portfolio USD values** — total portfolio value, per-token USD values, and recent transaction history in the Portfolio tab
 - **Markdown AI responses** — bold, italic, and inline code rendered natively in chat bubbles via `AttributedString`
 - **AI response time** — response latency shown in toolbar (e.g., "1.3s") for transparency
+- **Auto-refresh after transactions** — portfolio balance updates automatically 3–6 seconds after any AI-executed send, swap, faucet, or token creation
+- **Network resilience** — RPC requests retry up to 3× with exponential backoff on transient network errors
+- **iOS haptic feedback** — success haptic on transaction confirm, light tap on cancel
+- **Tap-to-copy addresses** — wallet address in Portfolio and sidebar copies to clipboard with a 2-second checkmark confirmation
+- **Message context menu** — long-press any chat bubble to copy message text
+- **Personalized empty state** — new chat screen shows live wallet balance, status indicator, and feature highlights
 
 ## Architecture
 
@@ -184,8 +190,9 @@ open SolMind.xcodeproj
 - **AI inference is on-device.** No API key for AI. No telemetry on financial intent.
 - **Private keys never leave the device.** Each keypair stored under `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`; keyed by its own base58 public key.
 - **Confirmation required for all state changes.** Every send/swap shows a `TransactionPreviewCard` before execution.
-- **Suspicious AI responses are blocked.** Any AI response mentioning "private key" or "seed phrase" is intercepted.
+- **Suspicious AI responses are blocked.** Responses combining a solicitation verb ("enter your", "provide your", etc.) with a credential noun ("private key", "seed phrase", etc.) are intercepted and replaced with a security warning.
 - **Address validation before use.** All addresses are Base58-decoded and checked for 32-byte length.
+- **AISession task cancellation.** Streaming tasks are cancelled when the consumer stops, preventing orphaned `LanguageModelSession` references.
 
 ## Devnet Token Ecosystem
 

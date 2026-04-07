@@ -9,6 +9,156 @@ import Testing
 import Foundation
 @testable import SolMind
 
+// MARK: - AIInstructions Tests
+
+@Suite("AI Instructions Context Block")
+struct AIInstructionsTests {
+
+    @Test func contextBlockContainsWallet() {
+        let result = AIInstructions.contextBlock(
+            walletAddress: "AbCdEfGhIjKlMnOp1234567890ABCDEF12345678",
+            solBalance: 2.5,
+            solUSDValue: 350.0,
+            tokenBalances: [],
+            statsContext: "",
+            userMessage: "Hello"
+        )
+        #expect(result.contains("AbCdEfGhIjKlMnOp1234567890ABCDEF12345678"))
+    }
+
+    @Test func contextBlockFormatsSolBalance() {
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 1.23456789,
+            solUSDValue: nil,
+            tokenBalances: [],
+            statsContext: "",
+            userMessage: "test"
+        )
+        #expect(result.contains("1.2346 SOL"))
+    }
+
+    @Test func contextBlockIncludesUSDValue() {
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 1.0,
+            solUSDValue: 125.50,
+            tokenBalances: [],
+            statsContext: "",
+            userMessage: "hi"
+        )
+        #expect(result.contains("$125.50"))
+    }
+
+    @Test func contextBlockIncludesTokenBalances() {
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 1.0,
+            solUSDValue: nil,
+            tokenBalances: [
+                (symbol: "USDC", uiAmount: 100.0, usdValue: 100.0),
+                (symbol: "SMND", uiAmount: 1_000_000, usdValue: nil)
+            ],
+            statsContext: "",
+            userMessage: "check tokens"
+        )
+        #expect(result.contains("USDC"))
+        #expect(result.contains("SMND"))
+        #expect(result.contains("Tokens:"))
+    }
+
+    @Test func contextBlockPreservesUserMessage() {
+        let msg = "What is my balance?"
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 0,
+            solUSDValue: nil,
+            tokenBalances: [],
+            statsContext: "",
+            userMessage: msg
+        )
+        #expect(result.hasSuffix(msg))
+    }
+
+    @Test func contextBlockTokensCappedAtFour() {
+        let tokens = (1...6).map { i in
+            (symbol: "TK\(i)", uiAmount: Double(i * 10), usdValue: Optional<Double>.none)
+        }
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 1.0,
+            solUSDValue: nil,
+            tokenBalances: tokens,
+            statsContext: "",
+            userMessage: "test"
+        )
+        // Only first 4 tokens should appear
+        #expect(result.contains("TK1"))
+        #expect(result.contains("TK4"))
+        #expect(!result.contains("TK5"))
+    }
+}
+
+// MARK: - SuggestionEngine Tests
+
+@Suite("Suggestion Engine")
+struct SuggestionEngineTests {
+
+    @Test func emptyWalletSuggestsFaucet() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "Your SOL balance is 0 SOL",
+            userMessage: "what's my balance",
+            walletHasBalance: false
+        )
+        #expect(suggestions.contains("Get free devnet SOL"))
+    }
+
+    @Test func successfulTxSuggestsHistory() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "✅ DEVNET: Transaction sent! Signature: abc123...",
+            userMessage: "send 0.1 SOL",
+            walletHasBalance: true
+        )
+        #expect(suggestions.contains("View transaction history"))
+    }
+
+    @Test func balanceQueryWithFundsSuggestsSend() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "SOL balance: 2.5 SOL",
+            userMessage: "what's my balance?",
+            walletHasBalance: true
+        )
+        #expect(suggestions.contains("Send SOL to someone"))
+    }
+
+    @Test func nftTopicSuggestsGallery() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "Your NFT was minted successfully",
+            userMessage: "mint me an nft",
+            walletHasBalance: true
+        )
+        #expect(suggestions.contains("View my NFT gallery"))
+    }
+
+    @Test func defaultSuggestionsReturnFour() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "Here is some general info.",
+            userMessage: "something unrelated",
+            walletHasBalance: true
+        )
+        #expect(suggestions.count == 4)
+    }
+
+    @Test func errorResponseSuggestsRetry() {
+        let suggestions = SuggestionEngine.suggestions(
+            for: "Transaction failed: connection error",
+            userMessage: "send SOL",
+            walletHasBalance: true
+        )
+        #expect(suggestions.contains("Try again"))
+    }
+}
+
 // MARK: - Base58 Tests
 
 @Suite("Base58 Encoding")

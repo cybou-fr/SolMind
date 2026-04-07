@@ -35,7 +35,12 @@ struct NFTGalleryView: View {
                 ContentUnavailableView {
                     Label("No NFTs Found", systemImage: "photo.on.rectangle.angled")
                 } description: {
-                    Text("No NFTs in this devnet wallet yet.\nTry minting some on devnet first.")
+                    Text("No NFTs in this devnet wallet yet.\nAsk SolMind to mint a compressed NFT on devnet.")
+                        .multilineTextAlignment(.center)
+                } actions: {
+                    Text("Open the Chat tab and say: **\"Mint me an NFT\"**")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
             } else {

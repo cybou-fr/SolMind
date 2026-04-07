@@ -128,6 +128,9 @@ class ChatViewModel {
                 walletHasBalance: (walletVM?.solBalance ?? 0) > 0
             )
 
+            // Auto-refresh balance after balance-changing tool executions
+            scheduleBalanceRefreshIfNeeded(for: fullResponse)
+
         } catch AIError.contextWindowExceeded {
             // Auto-reset the session and retry the same request once in the fresh context.
             aiSession.reset()
@@ -210,11 +213,14 @@ class ChatViewModel {
 
         hasInjectedContext = true
 
+        let tokenSummary = wvm.tokenBalances.map {
+            (symbol: $0.symbol, uiAmount: $0.uiAmount, usdValue: $0.usdValue)
+        }
         return AIInstructions.contextBlock(
             walletAddress: wvm.publicKey ?? "unknown",
             solBalance: wvm.solBalance,
             solUSDValue: wvm.solUSDValue,
-            tokenCount: wvm.tokenBalances.count,
+            tokenBalances: tokenSummary,
             statsContext: statsVM?.contextSummary ?? "",
             userMessage: userText
         )
@@ -256,6 +262,31 @@ class ChatViewModel {
             }
         }
         return result
+    }
+
+    // MARK: - Auto Balance Refresh
+
+    /// Schedule a balance refresh after a tool that changes wallet balance completes.
+    /// Uses a delay to allow the Solana network to confirm the transaction.
+    private func scheduleBalanceRefreshIfNeeded(for response: String) {
+        guard let walletVM else { return }
+        let lower = response.lowercased()
+
+        // Airdrop confirmation — longer delay since faucet transactions are slower
+        let isAirdrop = lower.contains("airdrop of") && lower.contains("sol requested")
+        // Transaction / swap / token creation
+        let isTransfer = lower.contains("✅ devnet: transaction sent")
+            || lower.contains("✅ devnet: swap executed")
+            || lower.contains("devnet: token") && lower.contains("created successfully")
+            || lower.contains("✅ devnet: nft minted")
+
+        guard isAirdrop || isTransfer else { return }
+
+        let delay: Duration = isAirdrop ? .seconds(6) : .seconds(3)
+        Task {
+            try? await Task.sleep(for: delay)
+            await walletVM.refreshBalance()
+        }
     }
 
     // MARK: - Security

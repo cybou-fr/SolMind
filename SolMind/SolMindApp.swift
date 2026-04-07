@@ -13,6 +13,7 @@ struct SolMindApp: App {
     @State private var chatViewModel = ChatViewModel()
     @State private var confirmationHandler = TransactionConfirmationHandler()
     @State private var statsViewModel = SolanaStatsViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -31,6 +32,15 @@ struct SolMindApp: App {
                     )
                     // Kick off an initial stats + price refresh
                     await statsViewModel.refresh()
+                }
+                // Refresh wallet balance + stats when app returns to foreground
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active && walletViewModel.isWalletReady {
+                        Task {
+                            await walletViewModel.refreshBalance()
+                            await statsViewModel.refresh()
+                        }
+                    }
                 }
         }
 #if os(macOS)
