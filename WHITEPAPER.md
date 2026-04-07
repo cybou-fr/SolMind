@@ -57,7 +57,7 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 ├─────────────────────────────────────────────────────┤
 │                                                     │
 │  ┌──────────────────────────────────────────────┐   │
-│  │    Apple Foundation Models (On-Device)        │   │
+│  │    Apple Foundation Models (On-Device)       │   │
 │  │                                              │   │
 │  │  SystemLanguageModel.default                 │   │
 │  │  LanguageModelSession(instructions:)         │   │
@@ -79,7 +79,7 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  └─────────────────┬────────────────────────────┘   │
 │                    │                                │
 │  ┌─────────────────┴────────────────────────────┐   │
-│  │          Wallet Abstraction Layer             │   │
+│  │          Wallet Abstraction Layer            │   │
 │  │                                              │   │
 │  │  WalletManager + LocalWallet                 │   │
 │  │  CryptoKit Curve25519 (Ed25519 keypair)      │   │
@@ -94,8 +94,8 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  │    · getEpochInfo · getRecentPerfSamples     │   │
 │  │  Solana Faucet — Devnet airdrop              │   │
 │  │  Jupiter V6 API — price oracle + swap        │   │
-│  │  Helius DAS + cNFT API — Devnet             │   │
-│  │  Circle USDC Faucet — Devnet test tokens    │   │
+│  │  Helius DAS + cNFT API — Devnet              │   │
+│  │  Circle USDC Faucet — Devnet test tokens     │   │
 │  │  MoonPay — Sandbox (fiat on-ramp URL)        │   │
 │  │  UserDefaults — stats + price persistence    │   │
 │  └──────────────────────────────────────────────┘   │

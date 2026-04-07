@@ -42,7 +42,7 @@ AI:   "⚠️ DEVNET: Transaction sent! TX: 4xK2...9fR3"
 
 ```
 ┌────────────────────────────────────────────────────┐
-│          Multiplatform App (SwiftUI)                │
+│          Multiplatform App (SwiftUI)               │
 │   macOS 26 · iOS 26 · iPadOS 26 · visionOS 26      │
 │                                                    │
 │  SolanaStatsBar ── SolanaStatsViewModel            │
