@@ -89,6 +89,19 @@ struct LocalWallet {
         }
     }
 
+    // MARK: - Export private key
+
+    /// Returns the wallet's private key as a base58-encoded 64-byte array
+    /// (32-byte seed ‖ 32-byte public key), compatible with Phantom and Solflare import.
+    static func exportPrivateKeyBase58(address publicKeyBase58: String) throws -> String {
+        let seedData = try load(publicKeyBase58: publicKeyBase58)
+        guard let privateKey = try? CryptoKit.Curve25519.Signing.PrivateKey(rawRepresentation: seedData)
+        else { throw KeychainError.notFound }
+        var keyBytes = Array(seedData)
+        keyBytes.append(contentsOf: privateKey.publicKey.rawRepresentation)
+        return Base58.encode(keyBytes)
+    }
+
     // MARK: - Existence check (any wallet)
 
     static func hasAnyWallet() -> Bool {

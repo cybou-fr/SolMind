@@ -57,7 +57,7 @@ enum KnownPrograms {
               description: "Solana's native staking program. Delegate SOL to validators to earn staking rewards (~6–7% APY).",
               category: "Staking", website: nil),
 
-        .init(address: "Vote111111111111111111111111111111111111111h",
+        .init(address: "Vote111111111111111111111111111111111111111",
               name: "Vote Program",
               description: "Solana's native validator vote program. Validators submit block votes through this program to reach consensus.",
               category: "System", website: nil),
@@ -138,11 +138,6 @@ enum KnownPrograms {
               description: "Orca's original constant-product AMM pools (legacy). Superseded by Whirlpools (CLMM) for most pairs.",
               category: "DeFi", website: "https://orca.so"),
 
-        .init(address: "opnb2LAfJYbRMAHHvqjCwQxanZn7n7sMkvHhSnHkT5",
-              name: "OpenBook DEX",
-              description: "OpenBook is the community-maintained fork of Serum — a central limit order book (CLOB) DEX on Solana.",
-              category: "DeFi", website: "https://openbook-solana.com"),
-
         .init(address: "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX",
               name: "Serum DEX v3",
               description: "Serum's central limit order book program. Foundation for early Solana DeFi; largely succeeded by OpenBook.",
@@ -155,20 +150,15 @@ enum KnownPrograms {
               description: "Liquid staking protocol. Stake SOL → receive mSOL. Earn ~7% APY while keeping tokens usable in DeFi.",
               category: "Staking", website: "https://marinade.finance"),
 
-        .init(address: "CrX7kMhLC3cSsXJdT7749NqT4zjMHDP8SKKOoaGZLNos",
-              name: "Lido for Solana",
-              description: "Lido's liquid staking on Solana. Stake SOL → receive stSOL representing your staked position.",
-              category: "Staking", website: "https://solana.lido.fi"),
-
-        .init(address: "SPoo1Ku8WFXoNDMHPsrGSTSG1Y47rzf7dFPm3iE6Ue",
-              name: "Solana Stake Pool Program",
-              description: "Official SPL stake pool program. Enables pooled staking with liquid pool tokens (used by Jito, BlazeStake, etc.).",
-              category: "Staking", website: "https://spl.solana.com/stake-pool"),
+        .init(address: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+              name: "Jito Stake Pool",
+              description: "Jito liquid staking pool. Stake SOL → receive JitoSOL. Earns MEV rewards on top of ~7% staking APY.",
+              category: "Staking", website: "https://jito.network"),
 
         // ── Governance / Multisig ─────────────────────────────────────────────
 
-        .init(address: "SMPLecH534NA9acpos4G6x7uf3LWbCAwZQE9e8ZekMu5",
-              name: "Squads Multisig v3",
+        .init(address: "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+              name: "Squads Multisig v4",
               description: "Squads Protocol for on-chain multisig wallets and program upgrade governance. Popular for DAO treasuries and team wallets.",
               category: "Governance", website: "https://squads.so"),
 
@@ -183,11 +173,6 @@ enum KnownPrograms {
               name: "Wormhole Bridge",
               description: "Wormhole cross-chain messaging protocol. Bridges tokens and messages between Solana, Ethereum, BNB Chain, and 20+ blockchains.",
               category: "Bridge", website: "https://wormhole.com"),
-
-        .init(address: "A7afMJ7a7kDIeGHFNDygDwsLuLuFQqiQ9fxuPuQ57y3K",
-              name: "Allbridge",
-              description: "Cross-chain token bridge connecting Solana with Ethereum, Polygon, Avalanche, and more.",
-              category: "Bridge", website: "https://allbridge.io"),
 
         // ── Lending / Borrowing ───────────────────────────────────────────────
 

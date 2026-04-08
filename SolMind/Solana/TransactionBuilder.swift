@@ -85,8 +85,10 @@ struct TransactionBuilder {
             hashData.append(contentsOf: programId)
             hashData.append(contentsOf: Array("ProgramDerivedAddress".utf8))
             let bytes = [UInt8](SHA256.hash(data: hashData))
-            // Valid PDA if the hash is NOT a valid ed25519 point
-            if (try? Curve25519.Signing.PublicKey(rawRepresentation: Data(bytes))) == nil {
+            // Valid PDA if the hash is NOT a valid Ed25519 curve point.
+            // CryptoKit's PublicKey init does NOT validate on-curve, so we use a
+            // proper GF(2^255-19) field check via isOnEd25519Curve().
+            if !isOnEd25519Curve(bytes) {
                 return (bytes, nonce)
             }
         }
@@ -401,5 +403,142 @@ enum TransactionError: LocalizedError, Equatable {
         case .insufficientFunds: return "Insufficient SOL balance."
         case .buildFailed(let msg): return "Transaction build failed: \(msg)"
         }
+    }
+}
+
+// MARK: - Ed25519 On-Curve Validation
+
+/// Private GF(2²⁵⁵−19) field arithmetic used exclusively by `isOnEd25519Curve`.
+/// CryptoKit's `Curve25519.Signing.PublicKey(rawRepresentation:)` accepts all 32-byte
+/// values without performing on-curve validation, so we implement the check ourselves.
+private extension TransactionBuilder {
+
+    // Field element: 4 × UInt64, little-endian (limbs[0] = least significant)
+    typealias FE = [UInt64]
+
+    // p = 2^255 − 19
+    static let feP: FE = [0xFFFFFFFFFFFFFFED, 0xFFFFFFFFFFFFFFFF,
+                           0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF]
+    // d = −121665/121666 mod p (Edwards curve constant)
+    static let feD: FE = [0x75EB4DCA135978A3, 0x00700A4D4141D8AB,
+                           0x8CC740797779E898, 0x52036CEE2B6FFE73]
+    // (p−1)/2 — exponent for Euler / Legendre criterion
+    static let feHalfPm1: FE = [0xFFFFFFFFFFFFFFF6, 0xFFFFFFFFFFFFFFFF,
+                                 0xFFFFFFFFFFFFFFFF, 0x3FFFFFFFFFFFFFFF]
+    // p−2 — exponent for modular inverse (Fermat's little theorem)
+    static let fePm2: FE = [0xFFFFFFFFFFFFFFEB, 0xFFFFFFFFFFFFFFFF,
+                             0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF]
+
+    /// Returns true if `bytes` represents a valid (on-curve) Ed25519 point.
+    /// Solana PDAs must be off-curve, so `findProgramAddress` returns bytes for
+    /// which this function returns **false**.
+    static func isOnEd25519Curve(_ bytes: [UInt8]) -> Bool {
+        guard bytes.count == 32 else { return false }
+        var yb = bytes
+        yb[31] &= 0x7F                        // clear sign bit to get y coordinate
+        let y  = feLoad(yb)
+        let y2 = feMul(y, y)
+        let u  = feSub(y2, [1, 0, 0, 0])      // u = y² − 1
+        let v  = feAdd(feMul(feD, y2), [1, 0, 0, 0])  // v = d·y² + 1
+        if feCmp(v, [0, 0, 0, 0]) == 0 { return feCmp(u, [0, 0, 0, 0]) == 0 }
+        let x2     = feMul(u, fePow(v, fePm2))     // x² = u / v  (Fermat inverse)
+        let euler  = fePow(x2, feHalfPm1)           // x²^((p−1)/2)
+        return feCmp(euler, [1, 0, 0, 0]) == 0 || feCmp(euler, [0, 0, 0, 0]) == 0
+    }
+
+    // MARK: Field helpers
+
+    static func feLoad(_ bytes: [UInt8]) -> FE {
+        var fe = FE(repeating: 0, count: 4)
+        for i in 0..<4 {
+            fe[i] = (0..<8).reduce(0) { $0 | UInt64(bytes[i*8 + $1]) << ($1 * 8) }
+        }
+        return fe
+    }
+
+    static func feCmp(_ a: FE, _ b: FE) -> Int {
+        for i in stride(from: 3, through: 0, by: -1) {
+            if a[i] < b[i] { return -1 }
+            if a[i] > b[i] { return  1 }
+        }
+        return 0
+    }
+
+    /// Subtraction without reduction — caller must guarantee a ≥ b.
+    static func feSub0(_ a: FE, _ b: FE) -> FE {
+        var r = FE(repeating: 0, count: 4); var borrow: UInt64 = 0
+        for i in 0..<4 {
+            let (s1, o1) = a[i].subtractingReportingOverflow(b[i])
+            let (s2, o2) = s1.subtractingReportingOverflow(borrow)
+            r[i] = s2; borrow = (o1 || o2) ? 1 : 0
+        }
+        return r
+    }
+
+    static func feAdd(_ a: FE, _ b: FE) -> FE {
+        var r = FE(repeating: 0, count: 4); var carry: UInt64 = 0
+        for i in 0..<4 {
+            let (s1, o1) = a[i].addingReportingOverflow(b[i])
+            let (s2, o2) = s1.addingReportingOverflow(carry)
+            r[i] = s2; carry = (o1 || o2) ? 1 : 0
+        }
+        if carry != 0 || feCmp(r, feP) >= 0 { return feSub0(r, feP) }
+        return r
+    }
+
+    static func feSub(_ a: FE, _ b: FE) -> FE {
+        feCmp(a, b) >= 0 ? feSub0(a, b) : feAdd(a, feSub0(feP, b))
+    }
+
+    /// Schoolbook 256×256-bit multiply, reduced mod p using 2²⁵⁶ ≡ 38 (mod p).
+    static func feMul(_ a: FE, _ b: FE) -> FE {
+        var r = [UInt64](repeating: 0, count: 8)
+        for i in 0..<4 {
+            for j in 0..<4 {
+                let (hi, lo) = a[i].multipliedFullWidth(by: b[j])
+                var c = lo; var k = i + j
+                while c != 0 && k < 8 {
+                    let (s, o) = r[k].addingReportingOverflow(c); r[k] = s; c = o ? 1 : 0; k += 1
+                }
+                c = hi; k = i + j + 1
+                while c != 0 && k < 8 {
+                    let (s, o) = r[k].addingReportingOverflow(c); r[k] = s; c = o ? 1 : 0; k += 1
+                }
+            }
+        }
+        // Reduce: split into high (r[4..7]) and low (r[0..3])
+        // n ≡ high × 38 + low  (mod p)
+        var scaled = [UInt64](repeating: 0, count: 5); var carry: UInt64 = 0
+        for i in 0..<4 {
+            let (hi, lo) = r[i + 4].multipliedFullWidth(by: 38)
+            let (s, c) = lo.addingReportingOverflow(carry)
+            scaled[i] = s; carry = hi &+ (c ? 1 : 0)
+        }
+        scaled[4] = carry
+        var partial = [UInt64](repeating: 0, count: 5); carry = 0
+        for i in 0..<4 {
+            let (s1, c1) = scaled[i].addingReportingOverflow(r[i])
+            let (s2, c2) = s1.addingReportingOverflow(carry)
+            partial[i] = s2; carry = (c1 || c2) ? 1 : 0
+        }
+        partial[4] = scaled[4] &+ carry
+        // Final step: extract q = partial >> 255, rem = partial & (2²⁵⁵ − 1)
+        let q   = (partial[3] >> 63) | (partial[4] << 1)
+        let rem: FE = [partial[0], partial[1], partial[2], partial[3] & 0x7FFFFFFFFFFFFFFF]
+        return feAdd(rem, [q * 19, 0, 0, 0])
+    }
+
+    /// Square-and-multiply exponentiation: base^exp mod p.
+    static func fePow(_ base: FE, _ exp: FE) -> FE {
+        var result: FE = [1, 0, 0, 0]; var b = base; var e = exp
+        for _ in 0..<256 {
+            if e[0] & 1 == 1 { result = feMul(result, b) }
+            b = feMul(b, b)
+            e[0] = (e[0] >> 1) | (e[1] << 63)
+            e[1] = (e[1] >> 1) | (e[2] << 63)
+            e[2] = (e[2] >> 1) | (e[3] << 63)
+            e[3] >>= 1
+        }
+        return result
     }
 }
