@@ -398,7 +398,11 @@ struct ChatView: View {
     private func exportConversation(_ convo: Conversation) -> String {
         var lines = ["# \(convo.title)", "Exported from SolMind (Devnet)", ""]
         for msg in convo.messages where !msg.isStreaming {
-            let role = msg.role == .user ? "You" : "SolMind"
+            let role: String
+            switch msg.role {
+            case .user: role = "You"
+            default:    role = "SolMind"
+            }
             lines.append("**\(role):** \(msg.content)")
             lines.append("")
         }

@@ -1,11 +1,11 @@
 # SolMind — Detailed Implementation Plan
 
-> **Status:** Post-submission polish. Phases 0–6 complete. Reliability, UX, and resilience improvements in progress.
+> **Status:** Feature-complete. All 11 AI tools implemented, Settings view added, deep audit complete, all critical bugs fixed.
 > **Targets:** macOS 26.4 (primary), iOS 26.4, iPadOS 26.4, visionOS 26.4
 > **Network:** Solana Devnet only
 > **Bundle ID:** `fr.cybou.SolMind`
 > **Team:** `9W74HUTJJL`
-> **Last updated:** April 7, 2026 (network retry, auto-balance refresh after tools, haptic feedback, tap-to-copy address, message context menu, enhanced empty states, Sendable RPC models, isSuspiciousResponse improved, dual TypingIndicator fix, AISession stream cancellation, PriceService.shared singleton)
+> **Last updated:** April 8, 2026 — Settings view + AppSettings singleton; ATA Program ID fix; SPL transfer; price service fix; Jupiter URLs fix; full address display; KnownPrograms registry + AnalyzeProgramTool; demo improvements (session metrics, context reset banner, success animation, ShareLink export, copyable tx signatures)
 
 ---
 
@@ -53,23 +53,23 @@
 | Real-time streaming | ✅ `collectStream()` updates message content on each chunk |
 | Solana RPC client | ✅ SolanaClient (actor): balance, airdrop, sendTransaction, getSignatures |
 | Wallet (local keypair) | ✅ Ed25519 via CryptoKit, **multi-keypair** Keychain (LocalWallet), WalletManager |
-| All 10 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, MintNFT, CreateToken, TxHistory, OnRamp |
+| All 11 AI Tools | ✅ Balance, Faucet, Send, Price, Swap, NFT, MintNFT, CreateToken, TxHistory, OnRamp, AnalyzeProgram |
 | Chat UI | ✅ ChatView, MessageBubble, TypingIndicator, dynamic suggestion chips |
 | Devnet configuration | ✅ SolanaConfig, DevnetBadge in all toolbars |
-| Transaction serialization | ✅ TransactionBuilder (SOL transfer wire format) |
+| Transaction serialization | ✅ TransactionBuilder (SOL transfer, SPL token transfer, createMint, mintTokens, PDA derivation) |
 | TransactionPreviewCard | ✅ @Generable TransactionPreview, confirm/cancel card |
 | Jupiter swap | ✅ JupiterService (quote + swap transaction, URLSession timeout, devnet USDC mint fixed) |
 | Helius DAS | ✅ HeliusService (getAssetsByOwner + mintCompressedNft) |
 | SPL token creation | ✅ CreateTokenTool + TransactionBuilder.buildCreateMint/buildMintTokens + PDA derivation |
 | Compressed NFT minting | ✅ MintNFTTool via Helius cNFT API (fee-free for owner) |
 | Devnet USDC faucet | ✅ FaucetTool updated with Circle faucet URL (https://faucet.circle.com) |
-| Price service | ✅ PriceService (Jupiter Price API v2, 30s cache) |
+| Price service | ✅ PriceService (Jupiter Price API v2 — price as String fixed, 30s cache, CoinGecko fallback) |
 | NFT Gallery | ✅ NFTGalleryView with AsyncImage grid |
 | Conversation sidebar (macOS) | ✅ ConversationSidebar with totalPortfolioUSD display |
 | visionOS ornament | ✅ PortfolioOrnamentView with totalPortfolioUSD + glassBackgroundEffect |
 | Conversation persistence | ✅ ConversationStore (JSON files in Application Support) |
 | Stats persistence | ✅ SolanaNetworkStats (Codable) + solPrice persisted to UserDefaults |
-| iOS Tab navigation | ✅ TabView with Chat / Portfolio / NFTs / Wallets tabs |
+| iOS Tab navigation | ✅ TabView with Chat / Portfolio / NFTs / Wallets / Settings tabs (5 tabs) |
 | ⌘K new chat shortcut | ✅ Toolbar button + keyboardShortcut in ChatView |
 | iOS keyboard docking | ✅ `.safeAreaInset(edge: .bottom)` on iOS |
 | Multi-keypair wallets | ✅ Generate, switch, delete; legacy migration; WalletPickerView |
@@ -85,6 +85,15 @@
 | Dual TypingIndicator fix | ✅ Removed standalone indicator from ChatView (MessageBubble handles it) |
 | Enhanced empty state | ✅ ChatView: live wallet card + feature bullets; PortfolioView: zero-balance onboarding nudge; NFT: improved guidance |
 | Sendable RPC models | ✅ All structs in `RPCResponse.swift` + `SignatureStatus`/`AnyCodable` in `SolanaClient.swift` |
+| SPL token transfer | ✅ `TransactionBuilder.buildSPLTransfer` — derives ATAs, idempotent recipient ATA creation, Token Program Transfer instruction |
+| KnownPrograms registry | ✅ `KnownPrograms.swift` — offline registry of ~30 programs (System, SPL Token, Jupiter, Raydium, Orca, Marinade, Metaplex, Squads, Wormhole…) |
+| Program analysis tool | ✅ `AnalyzeProgramTool` — 11th AI tool; offline KnownPrograms lookup + live `getAccountInfo` for unknown addresses |
+| Full address display | ✅ Addresses shown in full in all AI tool outputs (no more `prefix(8)…suffix(4)` truncation) |
+| ATA Program ID fix | ✅ `TransactionBuilder.ataProgramID` had wrong checksum (`bFo` → `bQ`); fixed |
+| Jupiter API fix | ✅ Swap endpoints updated to `api.jup.ag/swap/v1/quote` + `/swap/v1/swap`; `priceImpactPct` flexible String/Double decoder |
+| Settings view | ✅ `SettingsView.swift` — API keys (Helius, MoonPay), network info, haptic prefs, about, danger zone |
+| AppSettings singleton | ✅ `AppSettings.swift` — `@Observable` singleton; runtime keys override compiled Secrets; UserDefaults persistence |
+| Demo improvements | ✅ Context reset banner, session metrics toolbar, success animation, ShareLink export, copyable tx signatures, 5-step demo walkthrough |
 
 ### Architecture decision record
 > **Flat structure in app target (no Swift Packages for MVP)**  
@@ -106,7 +115,9 @@ SolMind/
 │   ├── SolMindApp.swift              # App entry + WalletVM/ChatVM/SolanaStatsVM environments
 │   ├── ContentView.swift             # Root view with NavigationSplitView / TabView
 │   ├── Config/
-│   │   └── SolanaConfig.swift        # Devnet RPC URLs, network enum
+│   │   ├── SolanaConfig.swift        # Devnet RPC URLs, network enum
+│   │   ├── AppSettings.swift         # @Observable singleton: runtime API keys + prefs (UserDefaults)
+│   │   └── Secrets.swift             # Compile-time fallback keys (not committed)
 │   ├── Models/
 │   │   ├── ChatMessage.swift         # Message model (user/assistant/tool)
 │   │   ├── Conversation.swift        # Conversation with message history
@@ -116,17 +127,19 @@ SolMind/
 │   │   ├── AIInstructions.swift      # System prompt + contextBlock() for first-message injection
 │   │   ├── SolanaKnowledge.swift     # ✨ Compressed Solana ecosystem knowledge (DeFi/NFTs/staking)
 │   │   ├── SuggestionEngine.swift    # ✨ Keyword-matched follow-up suggestion generator
+│   │   ├── KnownPrograms.swift       # ✨ Offline registry of ~30 well-known Solana programs
 │   │   └── Tools/
 │   │       ├── BalanceTool.swift      # getBalance
 │   │       ├── FaucetTool.swift       # getFromFaucet
-│   │       ├── SendTool.swift         # sendTokens (TransactionConfirmationHandler)
+│   │       ├── SendTool.swift         # sendTokens — SOL + SPL (TransactionConfirmationHandler)
 │   │       ├── SwapTool.swift         # swapTokens (TransactionConfirmationHandler)
-│   │       ├── PriceTool.swift        # getPrice
+│   │       ├── PriceTool.swift        # getPrice (Jupiter v2 + CoinGecko fallback)
 │   │       ├── NFTTool.swift          # getNFTs
 │   │       ├── MintNFTTool.swift      # mintNFT via Helius
 │   │       ├── CreateTokenTool.swift  # createToken (SPL mint + mintTokens)
 │   │       ├── TransactionHistoryTool.swift  # getTransactionHistory
-│   │       └── OnRampTool.swift       # buyWithFiat
+│   │       ├── OnRampTool.swift       # buyWithFiat
+│   │       └── AnalyzeProgramTool.swift  # ✨ analyzeProgram (KnownPrograms + getAccountInfo)
 │   ├── Solana/
 │   │   ├── SolanaClient.swift         # JSON-RPC client for devnet
 │   │   ├── TransactionBuilder.swift   # Build & serialize transactions
@@ -145,19 +158,20 @@ SolMind/
 │   │   ├── SolanaNetworkService.swift # ✨ actor: epoch info + TPS (2-min cache)
 │   │   └── ConversationStore.swift    # JSON persistence in Application Support
 │   ├── Views/
-│   │   ├── ChatView.swift             # Chat UI + SolanaStatsBar + dynamic suggestion chips
+│   │   ├── ChatView.swift             # Chat UI + SolanaStatsBar + suggestion chips + session metrics + ShareLink
 │   │   ├── MessageBubble.swift        # Markdown rendering + fixed TypingIndicator
 │   │   ├── SolanaStatsBar.swift       # ✨ SOL price · epoch progress · TPS bar
+│   │   ├── SettingsView.swift         # ✨ API keys, network info, preferences, danger zone
 │   │   ├── TransactionPreviewCard.swift # Confirmation card with approve/reject
-│   │   ├── PortfolioView.swift        # Total portfolio USD + token list + recent activity
+│   │   ├── PortfolioView.swift        # Total portfolio USD + token list + recent activity + copyable signatures
 │   │   ├── NFTGalleryView.swift       # NFT grid display
 │   │   ├── WalletSetupView.swift      # Onboarding / wallet creation
 │   │   ├── WalletPickerView.swift     # Multi-keypair list, generate, switch, delete
 │   │   ├── DevnetBadge.swift          # Persistent ⚠️ DEVNET indicator
 │   │   ├── PortfolioOrnamentView.swift# visionOS ornament (totalPortfolioUSD)
-│   │   └── ConversationSidebar.swift  # macOS sidebar (totalPortfolioUSD)
+│   │   └── ConversationSidebar.swift  # macOS sidebar (totalPortfolioUSD) + Settings nav row
 │   ├── ViewModels/
-│   │   ├── ChatViewModel.swift        # Chat state + context injection + suggestions + response time
+│   │   ├── ChatViewModel.swift        # Chat state + context injection + suggestions + session metrics
 │   │   ├── WalletViewModel.swift      # Wallet state + USD values + tx history
 │   │   └── SolanaStatsViewModel.swift # ✨ @Observable: price + network stats + UserDefaults cache
 │   └── Assets.xcassets/
@@ -167,7 +181,7 @@ SolMind/
 └── SolMind.xcodeproj/
 ```
 
-> ✨ = Added after initial implementation plan
+> ✨ = Added after initial implementation plan (post-audit improvements)
 
 > **Decision: Flat structure in app target (no Swift Packages for MVP)**
 > The original plan called for `SolMindCore` and `SolMindUI` Swift Packages. For a 5-week hackathon with a single developer, this adds overhead (package manifests, target dependencies, access control headaches). All code lives directly in the app target. Refactoring into packages is a post-hackathon task.
@@ -1159,6 +1173,51 @@ Provide a `Config/Secrets.example.swift` with placeholder values.
 - [ ] Chat input accepts text
 - [ ] Send button triggers AI response
 - [ ] Devnet badge is visible
+
+---
+
+## Audit Findings — April 8, 2026
+
+Deep code audit performed across all 50+ Swift source files. Findings below are categorised by severity and fix status.
+
+### FIXED — Critical
+
+| File | Bug | Fix Applied |
+|---|---|---|
+| `TransactionBuilder.swift:17` | **Wrong ATA Program ID** — `ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bFo` has wrong checksum; would crash on first `createToken` or `buildSPLTransfer` call | Fixed: `...Je1bQ` (correct 43-char address) |
+| `PriceService.swift` | **Jupiter Price API v2 returns `price` as JSON String** — `PriceData.price: Double` silently failed decode; every `getPrice` call returned nil | Fixed: `price: String` + `Double(_:)` parse + CoinGecko fallback |
+| `JupiterService.swift` | **Wrong swap endpoints** — `api.jup.ag/quote/v6` and `/swap/v6` return 404; correct paths are `/swap/v1/quote` and `/swap/v1/swap` | Fixed: static URL constants |
+| `JupiterService.swift` | **`SwapQuote.priceImpactPct: Double`** — Jupiter returns it as a JSON String; decode always failed | Fixed: custom `init(from:)` handles both String and Double |
+| `SendTool.swift` | **SPL token transfers silently ignored** — `tokenMint` argument was accepted but `buildSOLTransfer` was always called; no SPL path existed | Fixed: new `buildSPLTransfer` in `TransactionBuilder`; `SendTool` routes to it when `tokenMint` is provided |
+| `PriceTool.swift` | **`PriceService()` created per session** — bypassed the 30-second shared cache on every AI session reset | Fixed: `PriceService.shared` |
+
+### FIXED — Major
+
+| File | Bug | Fix Applied |
+|---|---|---|
+| `BalanceTool.swift:46` | SPL mint addresses truncated with `prefix(8)…` before passing to AI context | Fixed: full mint address shown |
+| `SendTool.swift:50` | Recipient address truncated `prefix(8)…suffix(4)` in confirmation preview | Fixed: full address shown |
+| `SolanaClient.swift:178` | Comment said "exponential backoff" but logic was linear (500ms × attempt) | Fixed: comment corrected |
+| `TransactionBuilder.swift` (new) | No `buildSPLTransfer` method — SPL sends were structurally impossible | Added: `buildSPLTransfer` with correct account layout, idempotent ATA creation for recipient |
+
+### VERIFIED — Not Bugs (audit false positives)
+
+| Finding | Verdict |
+|---|---|
+| Streaming `result = chunk` overwrites instead of appending | **Correct** — `session.streamResponse` yields cumulative content, not deltas; assigning is correct |
+| `systemProgramID = Array(repeating: 0, count: 32)` wrong | **Correct** — `11111111111111111111111111111111` in base58 is exactly 32 zero bytes |
+| `TransactionBuilder.buildSPLTransfer numReadonlyUnsignedAccounts: 4` | **Fixed during implementation** — corrected to 5 (mint + recipient + System + Token + ATAProgram) |
+
+### REMAINING — Known Limitations (not bugs, by design for devnet MVP)
+
+| Item | Notes |
+|---|---|
+| Jupiter swaps fail on devnet | `api.jup.ag` is mainnet only; devnet has no liquidity pools — by design, message shown to user |
+| No seed phrase recovery | Wallets are random Ed25519 keypairs; no BIP39/mnemonic support — acceptable for hackathon demo |
+| Hardcoded 6-decimal assumption in `SwapTool` | Only affects SOL↔USDC swaps on devnet which fail anyway; fix when mainnet support added |
+| `CreateTokenTool` 2.5s sleep between transactions | May be insufficient on congested networks; monitor in production |
+| `SolanaClient` timeout 20s may be tight | Conservative for congested devnet; increase if needed |
+| No mainnet toggle | Devnet-only is intentional for hackathon safety |
 
 ---
 

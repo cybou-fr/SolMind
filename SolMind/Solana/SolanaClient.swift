@@ -175,7 +175,7 @@ actor SolanaClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = bodyData
 
-        // Retry up to 3 times on transient network errors with exponential backoff
+        // Retry up to 3 times on transient network errors (delays: 500ms, 1000ms)
         var lastError: Error?
         for attempt in 0..<3 {
             do {
@@ -183,7 +183,6 @@ actor SolanaClient {
                 return data
             } catch let urlError as URLError where isTransientURLError(urlError) && attempt < 2 {
                 lastError = urlError
-                // 500 ms, 1 000 ms
                 let nanoseconds = UInt64(500_000_000) * UInt64(attempt + 1)
                 try? await Task.sleep(nanoseconds: nanoseconds)
             } catch {

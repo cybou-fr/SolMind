@@ -48,7 +48,20 @@ struct SwapTool: Tool {
                 amount: rawAmount
             )
         } catch {
-            return "Could not get swap quote: \(error.localizedDescription). Note: Devnet Jupiter liquidity is limited."
+            // Jupiter runs on mainnet only — devnet has no liquidity pools, so quotes always fail.
+            return """
+            ⚠️ **Swap unavailable on devnet**
+
+            Jupiter DEX runs on Solana **mainnet** only — devnet has no liquidity pools, \
+            so swap quotes always fail here. This is expected during devnet testing.
+
+            **Alternatives on devnet:**
+            • Get free devnet USDC at https://faucet.circle.com (paste your wallet address)
+            • Use "create token" to mint your own test tokens
+            • Swaps will work normally when the app switches to mainnet
+
+            Technical detail: \(error.localizedDescription)
+            """
         }
 
         let outDecimals = arguments.toToken.uppercased() == "SOL" ? 9 : 6

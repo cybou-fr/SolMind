@@ -14,7 +14,7 @@ struct TransactionBuilder {
     static let tokenProgramID: [UInt8] = Base58.decode("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")!
 
     // Associated Token Account Program ID
-    static let ataProgramID: [UInt8] = Base58.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bFo")!
+    static let ataProgramID: [UInt8] = Base58.decode("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bQ")!
 
     // Rent-exempt minimums (hardcoded for devnet; formula: 3480 lamports/byte/year × 2 years × (size + 128))
     static let mintRentExemptLamports: UInt64 = 1_461_600   // 82-byte mint account
@@ -228,6 +228,96 @@ struct TransactionBuilder {
         )
 
         let sig = try payer.sign(message)
+
+        var tx = Data()
+        tx.append(contentsOf: encodeCompactU16(1))
+        tx.append(sig)
+        tx.append(message)
+        return tx
+    }
+
+    // MARK: - SPL Token Transfer
+
+    /// Builds a signed transaction that transfers SPL tokens from the sender's ATA to the recipient's ATA.
+    /// Idempotently creates the recipient's ATA if it does not yet exist (sender pays ~0.002 SOL rent).
+    ///
+    /// Accounts layout:
+    ///   [0] payer/sender  — signer+writable
+    ///   [1] sourceATA     — writable  (sender's ATA for the mint)
+    ///   [2] recipientATA  — writable  (recipient's ATA; created if absent)
+    ///   [3] mint          — readonly
+    ///   [4] recipient     — readonly  (ATA owner, needed for idempotent create)
+    ///   [5] SystemProgram — readonly
+    ///   [6] TokenProgram  — readonly
+    ///   [7] ATAProgram    — readonly
+    static func buildSPLTransfer(
+        from sender: Keypair,
+        to recipientBase58: String,
+        mintBase58: String,
+        amount: UInt64,         // raw token units (already multiplied by 10^decimals)
+        recentBlockhash: String
+    ) throws -> Data {
+        guard let recipientBytes = Base58.decode(recipientBase58), recipientBytes.count == 32 else {
+            throw TransactionError.invalidAddress
+        }
+        guard let mintBytes = Base58.decode(mintBase58), mintBytes.count == 32 else {
+            throw TransactionError.buildFailed("Invalid mint address")
+        }
+        guard let blockhashBytes = Base58.decode(recentBlockhash), blockhashBytes.count == 32 else {
+            throw TransactionError.invalidBlockhash
+        }
+
+        let senderBytes = sender.publicKeyBytes
+
+        guard let sourceATA = associatedTokenAddress(owner: senderBytes, mint: mintBytes) else {
+            throw TransactionError.buildFailed("Could not derive sender ATA")
+        }
+        guard let recipientATA = associatedTokenAddress(owner: recipientBytes, mint: mintBytes) else {
+            throw TransactionError.buildFailed("Could not derive recipient ATA")
+        }
+
+        let accounts: [[UInt8]] = [
+            senderBytes,      // [0] signer+writable (payer for rent if needed)
+            sourceATA,        // [1] writable (token source)
+            recipientATA,     // [2] writable (token destination, may be created)
+            mintBytes,        // [3] readonly
+            recipientBytes,   // [4] readonly (ATA owner for idempotent create)
+            systemProgramID,  // [5] readonly
+            tokenProgramID,   // [6] readonly
+            ataProgramID      // [7] readonly
+        ]
+
+        // Idempotently create the recipient ATA (no-op if already exists)
+        // ATA Program CreateIdempotent: discriminator 1
+        let createATAData = Data([1])
+
+        // Token Program Transfer: discriminator 3 + amount (u64 LE)
+        var transferData = Data([3])
+        withUnsafeBytes(of: amount.littleEndian) { transferData.append(contentsOf: $0) }
+
+        let message = buildMessage(
+            accounts: accounts,
+            blockhash: blockhashBytes,
+            instructions: [
+                // Create recipient ATA if needed
+                TransactionInstruction(
+                    programIdIndex: 7,                         // ATAProgram
+                    accountIndices: [0, 2, 4, 3, 5, 6],      // payer, recipientATA, recipient, mint, system, token
+                    data: createATAData
+                ),
+                // Transfer tokens from source to destination
+                TransactionInstruction(
+                    programIdIndex: 6,                         // TokenProgram
+                    accountIndices: [1, 2, 0],                // sourceATA, recipientATA, authority(=sender)
+                    data: transferData
+                )
+            ],
+            numRequiredSignatures: 1,
+            numReadonlySignedAccounts: 0,
+            numReadonlyUnsignedAccounts: 5     // mint[3], recipient[4], SystemProgram[5], TokenProgram[6], ATAProgram[7]
+        )
+
+        let sig = try sender.sign(message)
 
         var tx = Data()
         tx.append(contentsOf: encodeCompactU16(1))

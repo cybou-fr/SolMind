@@ -18,6 +18,14 @@ class ChatViewModel {
     // AI stats
     var lastResponseTime: TimeInterval?
 
+    // Session metrics (reset on newConversation)
+    var sessionMessageCount: Int = 0
+    var sessionTransactionCount: Int = 0
+
+    // Transient banners
+    var showContextResetBanner: Bool = false
+    var showSuccessAnimation: Bool = false
+
     private let aiSession = AISession()
     private let solanaClient = SolanaClient()
     private let store = ConversationStore()
@@ -91,6 +99,7 @@ class ChatViewModel {
         inputText = ""
         isProcessing = true
         currentSuggestions = []
+        sessionMessageCount += 1
 
         let assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
         activeConversation?.messages.append(assistantMsg)
@@ -136,6 +145,7 @@ class ChatViewModel {
             // Auto-reset the session and retry the same request once in the fresh context.
             aiSession.reset()
             hasInjectedContext = false
+            showContextResetBannerBriefly()
             let retryPrompt = buildContextualPrompt(userText: trimmed)
             do {
                 let start = Date()
@@ -192,6 +202,8 @@ class ChatViewModel {
         hasInjectedContext = false
         currentSuggestions = []
         lastResponseTime = nil
+        sessionMessageCount = 0
+        sessionTransactionCount = 0
     }
 
     func deleteConversation(_ convo: Conversation) {
@@ -277,16 +289,36 @@ class ChatViewModel {
         let isAirdrop = lower.contains("airdrop of") && lower.contains("sol requested")
         // Transaction / swap / token creation
         let isTransfer = lower.contains("✅ devnet: transaction sent")
+            || lower.contains("✅ devnet: token transfer sent")
             || lower.contains("✅ devnet: swap executed")
             || lower.contains("devnet: token") && lower.contains("created successfully")
             || lower.contains("✅ devnet: nft minted")
 
         guard isAirdrop || isTransfer else { return }
 
+        sessionTransactionCount += 1
+        triggerSuccessAnimation()
+
         let delay: Duration = isAirdrop ? .seconds(6) : .seconds(3)
         Task {
             try? await Task.sleep(for: delay)
             await walletVM.refreshBalance()
+        }
+    }
+
+    private func triggerSuccessAnimation() {
+        showSuccessAnimation = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            showSuccessAnimation = false
+        }
+    }
+
+    private func showContextResetBannerBriefly() {
+        showContextResetBanner = true
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            showContextResetBanner = false
         }
     }
 

@@ -34,7 +34,7 @@ struct OnRampTool: Tool {
         // Build MoonPay sandbox URL
         var components = URLComponents(string: "https://buy-sandbox.moonpay.com")!
         components.queryItems = [
-            URLQueryItem(name: "apiKey", value: Secrets.moonpayAPIKey),
+            URLQueryItem(name: "apiKey", value: AppSettings.shared.effectiveMoonpayAPIKey),
             URLQueryItem(name: "currencyCode", value: "sol"),
             URLQueryItem(name: "walletAddress", value: publicKey),
             URLQueryItem(name: "baseCurrencyCode", value: arguments.currency?.lowercased() ?? "usd"),

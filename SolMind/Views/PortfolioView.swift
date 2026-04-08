@@ -12,6 +12,7 @@ struct PortfolioView: View {
     @State private var isRefreshing = false
     @State private var rotationDegrees: Double = 0
     @State private var addressCopied = false
+    @State private var copiedSignature: String? = nil
 
     var body: some View {
         List {
@@ -204,27 +205,67 @@ struct PortfolioView: View {
 
     @ViewBuilder
     private func transactionRow(_ tx: TransactionModel) -> some View {
-        Link(destination: tx.explorerURL) {
-            HStack(spacing: 10) {
-                Image(systemName: tx.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundStyle(tx.isSuccess ? Color.green : Color.red)
-                    .font(.title3)
+        HStack(spacing: 10) {
+            Image(systemName: tx.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(tx.isSuccess ? Color.green : Color.red)
+                .font(.title3)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(tx.signature.prefix(8) + "…" + tx.signature.suffix(4))
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.primary)
-                    Text(tx.formattedDate)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            VStack(alignment: .leading, spacing: 2) {
+                // Full signature, monospaced, wraps on narrow screens
+                Text(tx.signature)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(tx.formattedDate)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
 
-                Spacer()
+            Spacer(minLength: 4)
 
+            // Copy button
+            Button {
+                copySignature(tx.signature)
+            } label: {
+                Image(systemName: copiedSignature == tx.signature ? "checkmark" : "doc.on.doc")
+                    .font(.caption2)
+                    .foregroundStyle(copiedSignature == tx.signature ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Copy full signature")
+
+            // Explorer link
+            Link(destination: tx.explorerURL) {
                 Image(systemName: "arrow.up.right.square")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .help("View on Solana Explorer")
+        }
+        .contextMenu {
+            Button {
+                copySignature(tx.signature)
+            } label: {
+                Label("Copy Signature", systemImage: "doc.on.doc")
+            }
+            Link(destination: tx.explorerURL) {
+                Label("Open in Explorer", systemImage: "arrow.up.right.square")
+            }
+        }
+    }
+
+    private func copySignature(_ signature: String) {
+        #if os(iOS)
+        UIPasteboard.general.string = signature
+        #elseif os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(signature, forType: .string)
+        #endif
+        withAnimation { copiedSignature = signature }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { copiedSignature = nil }
         }
     }
 }

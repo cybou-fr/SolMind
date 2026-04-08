@@ -6,7 +6,7 @@ class HeliusService {
     private let apiKey: String
     private let baseURL: URL
 
-    init(apiKey: String = Secrets.heliusAPIKey) {
+    init(apiKey: String = AppSettings.shared.effectiveHeliusAPIKey) {
         self.apiKey = apiKey
         self.baseURL = URL(string: "https://devnet.helius-rpc.com/")!
     }

@@ -43,7 +43,7 @@ struct BalanceTool: Tool {
                     result += " | EMPTY WALLET: Call getFromFaucet tool now to fund this wallet with devnet SOL."
                 }
                 if !tokenAccounts.isEmpty {
-                    let tokenSummary = tokenAccounts.map { "\($0.mint.prefix(8))…: \($0.displayAmount)" }.joined(separator: ", ")
+                    let tokenSummary = tokenAccounts.map { "\($0.mint): \($0.displayAmount)" }.joined(separator: ", ")
                     result += " | SPL tokens: \(tokenSummary)"
                 }
                 return result

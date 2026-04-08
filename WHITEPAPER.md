@@ -6,7 +6,7 @@
 
 ## Abstract
 
-SolMind is a native multiplatform wallet application (macOS, iOS, iPadOS, visionOS) that combines Apple's Foundation Models framework with the Solana blockchain to deliver a natural-language interface for decentralized finance. By leveraging an on-device large language model with tool calling capabilities, SolMind enables users to execute blockchain operations — checking balances, sending tokens, swapping assets, viewing NFTs, and requesting faucet airdrops — through conversational prompts, while ensuring that all AI inference happens locally. No financial intent data, no portfolio information, and no transaction details ever leave the user's device during AI processing. The AI is enriched with a compressed Solana ecosystem knowledge base (DeFi protocols, NFT standards, staking, wallet security), live network statistics (epoch, TPS), and contextual wallet state injected at session start — all processed on-device. SolMind runs natively on Mac, iPhone, iPad, and Apple Vision Pro from a single shared codebase. **This hackathon MVP operates exclusively on Solana Devnet with all sponsor APIs in sandbox/test mode.**
+SolMind is a native multiplatform wallet application (macOS, iOS, iPadOS, visionOS) that combines Apple's Foundation Models framework with the Solana blockchain to deliver a natural-language interface for decentralized finance. By leveraging an on-device large language model with tool calling capabilities, SolMind enables users to execute blockchain operations — checking balances, sending SOL or SPL tokens, swapping assets, viewing and minting NFTs, creating tokens, analyzing on-chain programs, and requesting faucet airdrops — through conversational prompts, while ensuring that all AI inference happens locally. No financial intent data, no portfolio information, and no transaction details ever leave the user's device during AI processing. The AI is enriched with a compressed Solana ecosystem knowledge base (DeFi protocols, NFT standards, staking, wallet security), an offline registry of ~30 well-known Solana programs, live network statistics (epoch, TPS), and contextual wallet state injected at session start — all processed on-device. SolMind runs natively on Mac, iPhone, iPad, and Apple Vision Pro from a single shared codebase, with runtime-configurable API keys for easy setup. **This hackathon MVP operates exclusively on Solana Devnet with all sponsor APIs in sandbox/test mode.**
 
 ---
 
@@ -68,14 +68,15 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  │                                              │   │
 │  │  Tool Calling ──┬── BalanceTool              │   │
 │  │                 ├── FaucetTool               │   │
-│  │                 ├── SendTool                 │   │
+│  │                 ├── SendTool (SOL + SPL)     │   │
 │  │                 ├── SwapTool                 │   │
 │  │                 ├── PriceTool                │   │
 │  │                 ├── NFTTool                  │   │
 │  │                 ├── MintNFTTool              │   │
 │  │                 ├── CreateTokenTool          │   │
 │  │                 ├── TransactionHistoryTool   │   │
-│  │                 └── OnRampTool (sandbox)     │   │
+│  │                 ├── OnRampTool (sandbox)     │   │
+│  │                 └── AnalyzeProgramTool       │   │
 │  └─────────────────┬────────────────────────────┘   │
 │                    │                                │
 │  ┌─────────────────┴────────────────────────────┐   │
@@ -93,7 +94,7 @@ Apple's Foundation Models framework (introduced at WWDC 2025, shipping with macO
 │  │    · getBalance · sendTransaction            │   │
 │  │    · getEpochInfo · getRecentPerfSamples     │   │
 │  │  Solana Faucet — Devnet airdrop              │   │
-│  │  Jupiter V6 API — price oracle + swap        │   │
+│  │  Jupiter swap/v1 + Price v2 API              │   │
 │  │  Helius DAS + cNFT API — Devnet              │   │
 │  │  Circle USDC Faucet — Devnet test tokens     │   │
 │  │  MoonPay — Sandbox (fiat on-ramp URL)        │   │
@@ -268,7 +269,7 @@ All external services are configured for devnet or sandbox mode. No real funds o
 |---|---|---|---|
 | Solana JSON-RPC (public devnet) | Balance, transactions, epoch info, TPS | URLSession + JSON-RPC 2.0 | **Devnet** |
 | Solana Faucet | Free SOL for testing via `requestAirdrop` | Built-in RPC method | **Devnet** |
-| Jupiter V6 API | DEX aggregation; price oracle (30s cache) | REST API (no auth) | **Devnet** |
+| Jupiter swap/v1 + Price API v2 | DEX aggregation + price oracle (30s cache, CoinGecko fallback) | REST API (no auth) | **Mainnet (no devnet liquidity)** |
 | Helius DAS API | Token metadata, NFT data, cNFT minting | REST API (API key) | **Devnet** |
 | MoonPay | Fiat on-ramp simulation | Sandbox URL opened in browser | **Sandbox** |
 
@@ -279,23 +280,23 @@ All code lives in a single app target with `#if os(...)` branches for platform-s
 ```
 SolMind/ (single app target)
 ├── AI/              # AISession, AIInstructions, SolanaKnowledge, SuggestionEngine,
-│                    # 10 Tool conformances
-├── Solana/          # SolanaClient (actor), TransactionBuilder, Keypair, Base58
+│                    # KnownPrograms (offline program registry), 11 Tool conformances
+├── Solana/          # SolanaClient (actor), TransactionBuilder (SOL + SPL), Keypair, Base58
 ├── Wallet/          # WalletManager (multi-keypair), LocalWallet (Keychain)
-├── Services/        # JupiterService, HeliusService, PriceService,
+├── Services/        # JupiterService, HeliusService, PriceService (Jupiter v2 + CoinGecko),
 │                    # SolanaNetworkService (epoch/TPS), ConversationStore
 ├── Views/           # ChatView, MessageBubble, SolanaStatsBar, NFTGalleryView,
 │                    # PortfolioView, ConversationSidebar, TransactionPreviewCard,
-│                    # WalletSetupView, WalletPickerView, PortfolioOrnamentView
+│                    # SettingsView, WalletSetupView, WalletPickerView, PortfolioOrnamentView
 ├── ViewModels/      # ChatViewModel (@MainActor), WalletViewModel (@MainActor),
 │                    # SolanaStatsViewModel (@MainActor, @Observable)
 ├── Models/          # ChatMessage, Conversation (Codable), TransactionPreview (@Generable)
-└── Config/          # SolanaConfig, Secrets
+└── Config/          # SolanaConfig, AppSettings (@Observable, UserDefaults), Secrets
 ```
 
 Platform navigation strategy:
-- **macOS / visionOS**: `NavigationSplitView` with `ConversationSidebar` → `AppDestination` enum drives detail pane (`chat`, `portfolio`, `nftGallery`, `walletPicker`)
-- **iOS / iPadOS**: `TabView` with Chat, Portfolio, NFTs, Wallets tabs
+- **macOS / visionOS**: `NavigationSplitView` with `ConversationSidebar` → `AppDestination` enum drives detail pane (`chat`, `portfolio`, `nftGallery`, `walletPicker`, `settings`)
+- **iOS / iPadOS**: `TabView` with Chat, Portfolio, NFTs, Wallets, Settings tabs
 - **visionOS extra**: `.ornament(attachmentAnchor: .scene(.leading))` with `PortfolioOrnamentView` + `.glassBackgroundEffect()`
 
 ---
@@ -452,7 +453,7 @@ SolMind integrates multiple Colosseum Frontier Hackathon sponsors:
 
 | Sponsor | Integration | Depth |
 |---|---|---|
-| **Jupiter** | DEX aggregation — `swapTokens` tool calls Jupiter V6 `/quote` and `/swap` APIs; price oracle for `getPrice` | Core |
+| **Jupiter** | DEX aggregation — `swapTokens` calls Jupiter `swap/v1/quote` + `swap/v1/swap`; `getPrice` uses Jupiter Price API v2 (with CoinGecko fallback) | Core |
 | **Helius** | DAS API — `getNFTs` via `getAssetsByOwner`; **compressed NFT minting** via `mintCompressedNft` RPC extension | Core |
 | **MoonPay** | Fiat on-ramp — `buyWithFiat` tool opens MoonPay sandbox URL in browser | Core |
 

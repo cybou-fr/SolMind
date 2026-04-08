@@ -42,6 +42,11 @@ struct ConversationSidebar: View {
                     icon: "wallet.pass",
                     destination: .walletPicker
                 )
+                navRow(
+                    label: "Settings",
+                    icon: "gearshape",
+                    destination: .settings
+                )
             }
 
             // Conversation history
