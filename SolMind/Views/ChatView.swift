@@ -11,82 +11,106 @@ struct ChatView: View {
     var body: some View {
         @Bindable var vm = chatViewModel
 
-        VStack(spacing: 0) {
-            // AI Unavailable Banner
-            if chatViewModel.aiUnavailable {
-                HStack {
-                    Image(systemName: "brain.head.profile")
-                    Text("Apple Intelligence unavailable. Enable it in System Settings.")
-                        .font(.caption)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity)
-                .background(Color.orange.opacity(0.15))
-                .foregroundStyle(.orange)
-            }
-
-            // Solana live stats bar
-            SolanaStatsBar()
-
-            Divider()
-
-            // Messages
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        if chatViewModel.activeConversation?.messages.isEmpty == true {
-                            emptyState
-                        }
-                        ForEach(chatViewModel.activeConversation?.messages ?? []) { message in
-                            MessageBubble(message: message)
-                                .id(message.id)
-                        }
-                        // Spacer anchor — always scroll here
-                        Color.clear.frame(height: 1).id("bottom")
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                // AI Unavailable Banner
+                if chatViewModel.aiUnavailable {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                        Text("Apple Intelligence unavailable. Enable it in System Settings.")
+                            .font(.caption)
                     }
-                    .padding(.vertical, 8)
+                    .padding(8)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.orange.opacity(0.15))
+                    .foregroundStyle(.orange)
                 }
-                .onChange(of: chatViewModel.activeConversation?.messages.count) {
-                    withAnimation { proxy.scrollTo("bottom") }
-                }
-                .onAppear {
-                    proxy.scrollTo("bottom")
-                }
-            }
 
-            // Suggestion chips (shown after AI responds, above input bar)
-            if !chatViewModel.currentSuggestions.isEmpty && !chatViewModel.isProcessing {
-                suggestionChipsRow(chatViewModel.currentSuggestions)
-            }
+                // Context reset notification banner
+                if chatViewModel.showContextResetBanner {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .foregroundStyle(.blue)
+                        Text("Context refreshed — conversation continues in a new session.")
+                            .font(.caption)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundStyle(.primary)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                // Solana live stats bar
+                SolanaStatsBar()
+
+                Divider()
+
+                // Messages
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 4) {
+                            if chatViewModel.activeConversation?.messages.isEmpty == true {
+                                emptyState
+                            }
+                            ForEach(chatViewModel.activeConversation?.messages ?? []) { message in
+                                MessageBubble(message: message)
+                                    .id(message.id)
+                            }
+                            // Spacer anchor — always scroll here
+                            Color.clear.frame(height: 1).id("bottom")
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .onChange(of: chatViewModel.activeConversation?.messages.count) {
+                        withAnimation { proxy.scrollTo("bottom") }
+                    }
+                    .onAppear {
+                        proxy.scrollTo("bottom")
+                    }
+                }
+
+                // Suggestion chips (shown after AI responds, above input bar)
+                if !chatViewModel.currentSuggestions.isEmpty && !chatViewModel.isProcessing {
+                    suggestionChipsRow(chatViewModel.currentSuggestions)
+                }
 
 #if os(macOS) || os(visionOS)
-            Divider()
-            inputBar(vm: chatViewModel)
-#endif
-        }
-#if os(iOS)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
                 Divider()
                 inputBar(vm: chatViewModel)
-            }
-            .background(.bar)
-        }
 #endif
-        // Native transaction confirmation card
-        .overlay(alignment: .bottom) {
-            if let preview = confirmationHandler.pendingPreview {
-                TransactionPreviewCard(
-                    preview: preview,
-                    onConfirm: { confirmationHandler.confirm() },
-                    onCancel: { confirmationHandler.cancel() }
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+#if os(iOS)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    inputBar(vm: chatViewModel)
+                }
+                .background(.bar)
+            }
+#endif
+            // Native transaction confirmation card
+            .overlay(alignment: .bottom) {
+                if let preview = confirmationHandler.pendingPreview {
+                    TransactionPreviewCard(
+                        preview: preview,
+                        onConfirm: { confirmationHandler.confirm() },
+                        onCancel: { confirmationHandler.cancel() }
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(duration: 0.3), value: confirmationHandler.pendingPreview != nil)
+            .animation(.spring(duration: 0.4), value: chatViewModel.showContextResetBanner)
+
+            // Success animation overlay (brief checkmark after confirmed tx)
+            if chatViewModel.showSuccessAnimation {
+                successOverlay
             }
         }
-        .animation(.spring(duration: 0.3), value: confirmationHandler.pendingPreview != nil)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 DevnetBadge()
@@ -96,6 +120,15 @@ struct ChatView: View {
             }
             ToolbarItem(placement: .automatic) {
                 walletIndicator
+            }
+            // Conversation export
+            ToolbarItem(placement: .automatic) {
+                if let convo = chatViewModel.activeConversation, !convo.messages.isEmpty {
+                    ShareLink(item: exportConversation(convo)) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .help("Export conversation")
+                }
             }
             ToolbarItem(placement: .automatic) {
                 Button {
@@ -116,7 +149,30 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Sub-views
+    // MARK: - Success Animation Overlay
+
+    @ViewBuilder
+    private var successOverlay: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(.green)
+                Text("Transaction sent!")
+                    .font(.subheadline.bold())
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.bottom, 100)
+            .transition(.scale(scale: 0.8).combined(with: .opacity))
+        }
+        .animation(.spring(duration: 0.4), value: chatViewModel.showSuccessAnimation)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Empty State / Demo Walkthrough
 
     @ViewBuilder
     private var emptyState: some View {
@@ -165,21 +221,55 @@ struct ChatView: View {
 
             // Feature capability bullets
             VStack(alignment: .leading, spacing: 8) {
-                featureRow("drop.fill", "Request devnet SOL from faucet", .blue)
-                featureRow("paperplane.fill", "Send SOL & SPL tokens", .purple)
-                featureRow("arrow.2.squarepath", "Swap tokens via Jupiter DEX", .green)
-                featureRow("photo.artframe", "Mint compressed NFTs", .pink)
+                featureRow("drop.fill",        "Request devnet SOL from faucet", .blue)
+                featureRow("paperplane.fill",   "Send SOL & SPL tokens",         .purple)
+                featureRow("arrow.2.squarepath","Swap tokens via Jupiter DEX",   .green)
+                featureRow("photo.artframe",    "Mint compressed NFTs",          .pink)
+                featureRow("chart.line.uptrend.xyaxis", "Check live SOL price",  .orange)
+                featureRow("doc.text.magnifyingglass",  "Analyze any program address", .teal)
             }
             .padding(.horizontal, 8)
 
-            // Starter suggestion chips
-            let starters = [
-                "What's my balance?",
-                "Give me some devnet SOL",
-                "What's the price of SOL?",
-                "Show my recent transactions"
-            ]
-            suggestionChipsRow(starters)
+            // Guided demo steps
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Try these in order:")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+                let steps: [(String, String)] = [
+                    ("1", "What's my SOL balance?"),
+                    ("2", "Give me 2 devnet SOL"),
+                    ("3", "What's the price of SOL?"),
+                    ("4", "Create a token called TestCoin with symbol TCN"),
+                    ("5", "Mint me an NFT called SolMind Demo")
+                ]
+                ForEach(steps, id: \.0) { step in
+                    Button {
+                        Task {
+                            await MainActor.run { chatViewModel.inputText = step.1 }
+                            await chatViewModel.sendMessage()
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(step.0)
+                                .font(.caption2.bold())
+                                .foregroundStyle(.white)
+                                .frame(width: 18, height: 18)
+                                .background(Color.accentColor, in: Circle())
+                            Text(step.1)
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 4)
         }
         .padding(32)
         .frame(maxWidth: .infinity)
@@ -253,18 +343,41 @@ struct ChatView: View {
 
     // MARK: - Toolbar items
 
-    /// AI response time badge
+    /// AI response time + session stats
     @ViewBuilder
     private var aiStatsIndicator: some View {
-        if let t = chatViewModel.lastResponseTime {
-            HStack(spacing: 3) {
-                Image(systemName: "brain")
-                    .font(.caption2)
-                Text(String(format: "%.1fs", t))
-                    .font(.caption2.monospacedDigit())
+        HStack(spacing: 6) {
+            if let t = chatViewModel.lastResponseTime {
+                HStack(spacing: 3) {
+                    Image(systemName: "brain")
+                        .font(.caption2)
+                    Text(String(format: "%.1fs", t))
+                        .font(.caption2.monospacedDigit())
+                }
+                .foregroundStyle(.secondary)
+                .help("Last AI response time")
             }
-            .foregroundStyle(.secondary)
-            .help("Last AI response time")
+            if chatViewModel.sessionMessageCount > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.caption2)
+                    Text("\(chatViewModel.sessionMessageCount)")
+                        .font(.caption2.monospacedDigit())
+                }
+                .foregroundStyle(.secondary)
+                .help("Messages this session")
+            }
+            if chatViewModel.sessionTransactionCount > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                    Text("\(chatViewModel.sessionTransactionCount)")
+                        .font(.caption2.monospacedDigit())
+                }
+                .foregroundStyle(.secondary)
+                .help("Transactions this session")
+            }
         }
     }
 
@@ -278,6 +391,18 @@ struct ChatView: View {
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Conversation Export
+
+    private func exportConversation(_ convo: Conversation) -> String {
+        var lines = ["# \(convo.title)", "Exported from SolMind (Devnet)", ""]
+        for msg in convo.messages where !msg.isStreaming {
+            let role = msg.role == .user ? "You" : "SolMind"
+            lines.append("**\(role):** \(msg.content)")
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
