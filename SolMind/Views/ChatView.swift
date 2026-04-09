@@ -351,7 +351,7 @@ struct ChatView: View {
                 HStack(spacing: 3) {
                     Image(systemName: "brain")
                         .font(.caption2)
-                    Text(String(format: "%.1fs", t))
+                    Text("\(t.formatted(.number.precision(.fractionLength(1))))s")
                         .font(.caption2.monospacedDigit())
                 }
                 .foregroundStyle(.secondary)

@@ -57,6 +57,8 @@ struct MintNFTTool: Tool {
             return "NFT mint cancelled."
         }
 
+        await MainActor.run { ToastManager.shared.info("Minting NFT…") }
+
         // Parse traits from "Key=Value" strings
         let attributes: [[String: String]] = arguments.traits?.compactMap { trait in
             let parts = trait.split(separator: "=", maxSplits: 1).map(String.init)
@@ -75,6 +77,7 @@ struct MintNFTTool: Tool {
                 attributes: attributes
             )
 
+            await MainActor.run { ToastManager.shared.success("✓ NFT '\(arguments.name)' minted!") }
             return """
             ⚠️ DEVNET: Compressed NFT minted successfully!
 

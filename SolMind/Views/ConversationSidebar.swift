@@ -172,7 +172,7 @@ struct ConversationSidebar: View {
                     .frame(width: 8, height: 8)
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(String(format: "%.4f", walletViewModel.solBalance))
+                Text(walletViewModel.solBalance, format: .number.precision(.fractionLength(4)))
                     .font(.title3.bold())
                 Text("SOL")
                     .font(.caption)

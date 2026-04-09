@@ -10,6 +10,6 @@ struct TokenAccount: Identifiable {
     let uiAmount: Double
 
     var displayAmount: String {
-        String(format: "%.4f", uiAmount)
+        uiAmount.formatted(.number.precision(.fractionLength(4)))
     }
 }

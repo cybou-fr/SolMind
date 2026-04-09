@@ -63,6 +63,8 @@ struct SendTool: Tool {
         let confirmed = await confirmationHandler.requestConfirmation(preview)
         guard confirmed else { return "Transaction cancelled by user." }
 
+        await MainActor.run { ToastManager.shared.info("Sending transaction…") }
+
         do {
             let lamports = UInt64(amount * 1_000_000_000)
             let keypair = try walletManager.keypairForSigning()
@@ -78,9 +80,11 @@ struct SendTool: Tool {
             let signature = try await solanaClient.sendTransaction(serialized: txData)
 
             guard signature.count >= 80, Base58.decode(signature) != nil else {
+                await MainActor.run { ToastManager.shared.warning("Transaction sent but response was unexpected — verify on Explorer.") }
                 return "⚠️ DEVNET: sendTransaction returned an unexpected response. Check the explorer manually."
             }
 
+            await MainActor.run { ToastManager.shared.success("✓ \(amount) SOL sent!") }
             return """
             ✅ DEVNET: Transaction sent!
             Sent: \(amount) SOL → \(recipient)
@@ -88,6 +92,7 @@ struct SendTool: Tool {
             Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
             """
         } catch {
+            await MainActor.run { ToastManager.shared.error("Send failed: \(error.localizedDescription)") }
             return "Transaction failed: \(error.localizedDescription)"
         }
     }
@@ -130,6 +135,8 @@ struct SendTool: Tool {
         let confirmed = await confirmationHandler.requestConfirmation(preview)
         guard confirmed else { return "Transaction cancelled by user." }
 
+        await MainActor.run { ToastManager.shared.info("Sending token transfer…") }
+
         do {
             let keypair = try walletManager.keypairForSigning()
             let blockhash = try await solanaClient.getLatestBlockhash()
@@ -145,9 +152,11 @@ struct SendTool: Tool {
             let signature = try await solanaClient.sendTransaction(serialized: txData)
 
             guard signature.count >= 80, Base58.decode(signature) != nil else {
+                await MainActor.run { ToastManager.shared.warning("Transfer sent but response was unexpected — verify on Explorer.") }
                 return "⚠️ DEVNET: sendTransaction returned an unexpected response. Check the explorer manually."
             }
 
+            await MainActor.run { ToastManager.shared.success("✓ \(amount) tokens sent!") }
             return """
             ✅ DEVNET: Token transfer sent!
             Sent: \(amount) tokens → \(recipient)
@@ -156,6 +165,7 @@ struct SendTool: Tool {
             Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
             """
         } catch {
+            await MainActor.run { ToastManager.shared.error("Transfer failed: \(error.localizedDescription)") }
             return "SPL transfer failed: \(error.localizedDescription)"
         }
     }

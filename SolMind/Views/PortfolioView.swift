@@ -13,6 +13,7 @@ struct PortfolioView: View {
     @State private var rotationDegrees: Double = 0
     @State private var addressCopied = false
     @State private var copiedSignature: String? = nil
+    @State private var isRequestingAirdrop = false
 
     var body: some View {
         List {
@@ -151,13 +152,19 @@ struct PortfolioView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Button {
-                            Task { _ = try? await walletViewModel.requestAirdrop(solAmount: 2.0) }
+                            Task { await requestAirdrop(amount: 2.0) }
                         } label: {
-                            Label("Request 2 Devnet SOL", systemImage: "arrow.down.circle.fill")
-                                .frame(maxWidth: .infinity)
+                            if isRequestingAirdrop {
+                                Label("Requesting…", systemImage: "arrow.down.circle")
+                                    .frame(maxWidth: .infinity)
+                            } else {
+                                Label("Request 2 Devnet SOL", systemImage: "arrow.down.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .disabled(isRequestingAirdrop)
                     }
                     .padding(.vertical, 4)
                 }
@@ -166,11 +173,13 @@ struct PortfolioView: View {
             // Quick Actions
             Section("Quick Actions") {
                 Button {
-                    Task { _ = try? await walletViewModel.requestAirdrop(solAmount: 1.0) }
+                    Task { await requestAirdrop(amount: 1.0) }
                 } label: {
-                    Label("Get 1 Devnet SOL (Faucet)", systemImage: "drop.fill")
+                    Label(isRequestingAirdrop ? "Requesting…" : "Get 1 Devnet SOL (Faucet)",
+                          systemImage: "drop.fill")
                 }
                 .tint(.accentColor)
+                .disabled(isRequestingAirdrop)
             }
         }
         .navigationTitle("Portfolio")
@@ -182,6 +191,21 @@ struct PortfolioView: View {
             if walletViewModel.recentTransactions.isEmpty {
                 await walletViewModel.refreshTransactionHistory()
             }
+        }
+    }
+
+    // MARK: - Airdrop
+
+    private func requestAirdrop(amount: Double) async {
+        guard !isRequestingAirdrop else { return }
+        isRequestingAirdrop = true
+        ToastManager.shared.info("Requesting \(Int(amount)) devnet SOL…")
+        defer { isRequestingAirdrop = false }
+        do {
+            _ = try await walletViewModel.requestAirdrop(solAmount: amount)
+            ToastManager.shared.success("✓ \(Int(amount)) devnet SOL received!")
+        } catch {
+            ToastManager.shared.error("Airdrop failed: \(error.localizedDescription)")
         }
     }
 

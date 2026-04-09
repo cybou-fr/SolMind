@@ -87,18 +87,22 @@ struct SwapTool: Tool {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
         }
+        await MainActor.run { ToastManager.shared.info("Executing swap…") }
         do {
             let swapData = try await jupiterService.getSwapTransaction(quote: quote, userPublicKey: publicKey)
             let signature = try await solanaClient.sendTransaction(serialized: swapData)
             guard signature.count >= 80, Base58.decode(signature) != nil else {
+                await MainActor.run { ToastManager.shared.warning("Swap submitted but response was unexpected — verify on Explorer.") }
                 return "⚠️ DEVNET: sendTransaction returned an unexpected response. The swap may not have been submitted. Check the explorer manually."
             }
+            await MainActor.run { ToastManager.shared.success("✓ Swap executed!") }
             return """
             ✅ DEVNET: Swap executed!
             Signature: \(signature)
             Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
             """
         } catch {
+            await MainActor.run { ToastManager.shared.error("Swap failed: \(error.localizedDescription)") }
             return "Swap execution failed: \(error.localizedDescription)"
         }
     }

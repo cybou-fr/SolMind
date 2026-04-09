@@ -13,6 +13,17 @@ struct WalletPickerView: View {
     @State private var error: String?
     @State private var deleteCandidate: String?
     @State private var copiedAddress: String?
+    // Export private key
+    // Export private key
+    @State private var exportCandidate: String?        // address to export (triggers confirm dialog)
+    @State private var exportedKey: String?            // loaded base58 private key
+    @State private var isKeyRevealed = false
+    @State private var keyCopied = false
+    @State private var showExportSheet = false
+    // Import private key
+    @State private var showImportSheet = false
+    @State private var importKeyText = ""
+    @State private var isImporting = false
 
     var body: some View {
         List {
@@ -36,6 +47,15 @@ struct WalletPickerView: View {
                     } else {
                         Label("Generate New Wallet", systemImage: "plus.circle")
                     }
+                }
+                .disabled(isGenerating)
+
+                Button {
+                    importKeyText = ""
+                    error = nil
+                    showImportSheet = true
+                } label: {
+                    Label("Import Existing Wallet", systemImage: "arrow.down.circle")
                 }
                 .disabled(isGenerating)
             }
@@ -66,6 +86,28 @@ struct WalletPickerView: View {
             }
         } message: {
             Text("The private key will be permanently removed from the Keychain.")
+        }
+        // Export — confirmation before revealing
+        .confirmationDialog(
+            "Export Private Key",
+            isPresented: Binding(get: { exportCandidate != nil && !showExportSheet },
+                                 set: { if !$0 { exportCandidate = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Show Private Key", role: .destructive) {
+                loadExportKey()
+            }
+            Button("Cancel", role: .cancel) { exportCandidate = nil }
+        } message: {
+            Text("Never share your private key. Anyone who has it can access all funds in this wallet.")
+        }
+        // Export sheet — blurred reveal
+        .sheet(isPresented: $showExportSheet, onDismiss: clearExportState) {
+            exportKeySheet
+        }
+        // Import sheet
+        .sheet(isPresented: $showImportSheet) {
+            importWalletSheet
         }
     }
 
@@ -123,6 +165,12 @@ struct WalletPickerView: View {
                     Label("Delete", systemImage: "trash")
                 }
             }
+            Button {
+                exportCandidate = address
+            } label: {
+                Label("Export Key", systemImage: "key")
+            }
+            .tint(.orange)
         }
         .contextMenu {
             Button {
@@ -137,6 +185,12 @@ struct WalletPickerView: View {
                     Label("Make Active", systemImage: "checkmark.circle")
                 }
             }
+            Divider()
+            Button {
+                exportCandidate = address
+            } label: {
+                Label("Export Private Key…", systemImage: "key")
+            }
             if walletViewModel.allAddresses.count > 1 {
                 Divider()
                 Button(role: .destructive) {
@@ -145,6 +199,202 @@ struct WalletPickerView: View {
                     Label("Delete Wallet", systemImage: "trash")
                 }
             }
+        }
+    }
+
+    // MARK: - Export Key Sheet
+
+    @ViewBuilder
+    private var exportKeySheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Warning banner
+                    HStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.yellow)
+                        Text("Never share your private key. Anyone with access to it can steal all funds.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+
+                    // Address label
+                    if let addr = exportCandidate {
+                        Text("\(addr.prefix(8))…\(addr.suffix(8))")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+
+                    // Key display with blur/reveal
+                    ZStack {
+                        if let key = exportedKey {
+                            Text(key)
+                                .font(.system(size: 13, weight: .regular, design: .monospaced))
+                                .multilineTextAlignment(.center)
+                                .padding()
+                                .blur(radius: isKeyRevealed ? 0 : 10)
+                                .animation(.easeInOut(duration: 0.25), value: isKeyRevealed)
+
+                            if !isKeyRevealed {
+                                Button {
+                                    isKeyRevealed = true
+                                } label: {
+                                    Label("Tap to reveal", systemImage: "eye")
+                                        .font(.subheadline.bold())
+                                        .foregroundStyle(.primary)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(.regularMaterial, in: Capsule())
+                                }
+                            }
+                        } else {
+                            ProgressView()
+                                .padding()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 100)
+                    .background(.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture { if exportedKey != nil { isKeyRevealed = true } }
+
+                    // Copy button
+                    Button {
+                        guard let key = exportedKey else { return }
+#if os(macOS)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(key, forType: .string)
+#else
+                        UIPasteboard.general.string = key
+#endif
+                        keyCopied = true
+                        Task {
+                            try? await Task.sleep(nanoseconds: 2_000_000_000)
+                            keyCopied = false
+                        }
+                    } label: {
+                        Label(keyCopied ? "Copied!" : "Copy Private Key",
+                              systemImage: keyCopied ? "checkmark" : "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(keyCopied ? .green : .accentColor)
+                    .disabled(exportedKey == nil)
+
+                    Text("This key is in Phantom/Solflare compatible format (64-byte base58).")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+            }
+            .navigationTitle("Private Key")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showExportSheet = false }
+                }
+            }
+        }
+    }
+
+    // MARK: - Export helpers
+
+    private func loadExportKey() {
+        guard let address = exportCandidate else { return }
+        do {
+            exportedKey = try LocalWallet.exportPrivateKeyBase58(address: address)
+            isKeyRevealed = false
+            keyCopied = false
+            showExportSheet = true
+        } catch {
+            self.error = "Could not load private key: \(error.localizedDescription)"
+            exportCandidate = nil
+        }
+    }
+
+    private func clearExportState() {
+        exportCandidate = nil
+        exportedKey = nil
+        isKeyRevealed = false
+        keyCopied = false
+    }
+
+    // MARK: - Import Wallet Sheet
+
+    @ViewBuilder
+    private var importWalletSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Paste 64-byte base58 private key…", text: $importKeyText, axis: .vertical)
+                        .font(.system(size: 13, design: .monospaced))
+                        .lineLimit(3...6)
+                        .autocorrectionDisabled()
+#if os(iOS)
+                        .textInputAutocapitalization(.never)
+#endif
+                } header: {
+                    Text("Private Key")
+                } footer: {
+                    Text("Paste a 64-byte base58 private key exported from SolMind, Phantom, or Solflare. Your key never leaves this device.")
+                }
+
+                Section {
+                    Button {
+                        Task { await doImport() }
+                    } label: {
+                        if isImporting {
+                            HStack {
+                                ProgressView().controlSize(.small)
+                                Text("Importing…")
+                            }
+                        } else {
+                            Text("Import Wallet")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .bold()
+                        }
+                    }
+                    .disabled(importKeyText.trimmingCharacters(in: .whitespaces).isEmpty || isImporting)
+                }
+
+                if let error {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Import Wallet")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showImportSheet = false
+                        error = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func doImport() async {
+        isImporting = true
+        error = nil
+        defer { isImporting = false }
+        do {
+            let address = try await walletViewModel.importWallet(
+                privateKeyBase58: importKeyText.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            showImportSheet = false
+            ToastManager.shared.success("Wallet imported: \(address.prefix(4))…\(address.suffix(4))")
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 
@@ -157,9 +407,10 @@ struct WalletPickerView: View {
         do {
             let address = try await walletViewModel.generateNewWallet()
             await walletViewModel.refreshBalance()
-            _ = address
+            ToastManager.shared.success("New wallet created: \(address.prefix(4))…\(address.suffix(4))")
         } catch {
             self.error = error.localizedDescription
+            ToastManager.shared.error("Wallet creation failed")
         }
     }
 

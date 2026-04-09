@@ -89,6 +89,26 @@ struct LocalWallet {
         }
     }
 
+    // MARK: - Import private key
+
+    /// Imports a wallet from a base58-encoded 64-byte private key (Phantom/Solflare format).
+    /// - Parameter base58Key: 64-byte base58 string (32-byte seed ‖ 32-byte pubkey)
+    /// - Returns: The public key (base58) of the imported wallet
+    /// - Throws: `KeychainError.invalidKey` if the key is malformed, or Keychain errors on save failure.
+    @discardableResult
+    static func importFromPrivateKeyBase58(_ base58Key: String) throws -> String {
+        guard let bytes = Base58.decode(base58Key.trimmingCharacters(in: .whitespacesAndNewlines)),
+              bytes.count == 64 else { throw KeychainError.invalidKey }
+        let seedData = Data(bytes.prefix(32))
+        guard let privateKey = try? CryptoKit.Curve25519.Signing.PrivateKey(rawRepresentation: seedData)
+        else { throw KeychainError.invalidKey }
+        let publicKeyBase58 = Base58.encode(Array(privateKey.publicKey.rawRepresentation))
+        // Already imported — just return the address without duplicating
+        if allAddresses().contains(publicKeyBase58) { return publicKeyBase58 }
+        try save(privateKeyData: seedData, publicKeyBase58: publicKeyBase58)
+        return publicKeyBase58
+    }
+
     // MARK: - Export private key
 
     /// Returns the wallet's private key as a base58-encoded 64-byte array
@@ -147,12 +167,14 @@ enum KeychainError: LocalizedError {
     case saveFailed(OSStatus)
     case notFound
     case deleteFailed(OSStatus)
+    case invalidKey
 
     var errorDescription: String? {
         switch self {
         case .saveFailed(let s): return "Keychain save failed (OSStatus \(s))"
         case .notFound: return "No wallet found in Keychain."
         case .deleteFailed(let s): return "Keychain delete failed (OSStatus \(s))"
+        case .invalidKey: return "Invalid private key. Expected a base58-encoded 64-byte key (Phantom/Solflare format)."
         }
     }
 }

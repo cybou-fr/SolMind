@@ -50,6 +50,18 @@ class WalletManager {
         return address
     }
 
+    // MARK: - Import existing wallet
+
+    /// Imports a wallet from a 64-byte base58 private key, stores it in the Keychain,
+    /// and makes it the active wallet. Returns the imported public key (base58).
+    @discardableResult
+    func importAndActivateWallet(privateKeyBase58: String) throws -> String {
+        let address = try LocalWallet.importFromPrivateKeyBase58(privateKeyBase58)
+        allAddresses = LocalWallet.allAddresses()
+        try switchWallet(to: address)
+        return address
+    }
+
     // MARK: - Switch active wallet
 
     func switchWallet(to address: String) throws {

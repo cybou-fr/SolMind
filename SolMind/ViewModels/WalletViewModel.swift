@@ -69,6 +69,16 @@ class WalletViewModel {
         await refreshBalance()
     }
 
+    /// Import a wallet from a 64-byte base58 private key, activate it, and refresh balances.
+    @discardableResult
+    func importWallet(privateKeyBase58: String) async throws -> String {
+        let address = try walletManager.importAndActivateWallet(privateKeyBase58: privateKeyBase58)
+        solBalance = 0
+        tokenBalances = []
+        await refreshBalance()
+        return address
+    }
+
     // MARK: - Balance
 
     func refreshBalance() async {

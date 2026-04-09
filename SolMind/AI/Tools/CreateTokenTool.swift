@@ -59,6 +59,8 @@ struct CreateTokenTool: Tool {
             return "Token creation cancelled."
         }
 
+        await MainActor.run { ToastManager.shared.info("Creating token mint…") }
+
         let payer: Keypair
         do { payer = try walletManager.keypairForSigning() } catch {
             return "Wallet signing unavailable: \(error.localizedDescription)"
@@ -93,6 +95,7 @@ struct CreateTokenTool: Tool {
         }
 
         // Allow the transaction to land before the next one references the mint account
+        await MainActor.run { ToastManager.shared.info("Waiting for mint to confirm…") }
         try await Task.sleep(nanoseconds: 2_500_000_000)
 
         // --- Transaction 2: createATA (idempotent) + mintTo ---
@@ -121,6 +124,7 @@ struct CreateTokenTool: Tool {
         }
 
         let mintAddress = mintKeypair.publicKeyBase58
+        await MainActor.run { ToastManager.shared.success("✓ Token '\(arguments.symbol.uppercased())' created!") }
         return """
         ⚠️ DEVNET: Token '\(arguments.tokenName)' created successfully!
 

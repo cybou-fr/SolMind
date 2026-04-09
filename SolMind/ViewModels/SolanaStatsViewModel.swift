@@ -41,7 +41,7 @@ class SolanaStatsViewModel {
 
     var solPriceFormatted: String {
         guard let p = solPrice else { return "SOL --" }
-        return String(format: "SOL $%.2f", p)
+        return "SOL $\(p.formatted(.number.precision(.fractionLength(2))))"
     }
 
     var epochFormatted: String {

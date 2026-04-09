@@ -76,6 +76,7 @@ struct ContentView: View {
 #endif
             }
         }
+        .toastOverlay()
         .task {
             await walletViewModel.setup()
         }
