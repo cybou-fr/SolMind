@@ -5,7 +5,7 @@ import Foundation
 
 struct NFTTool: Tool {
     let name = "getNFTs"
-    let description = "Get the list of NFTs owned by the connected wallet using Helius DAS API."
+    let description = "List NFTs owned by the active wallet via Helius DAS."
 
     private let walletManager: WalletManager
     private let heliusService: HeliusService

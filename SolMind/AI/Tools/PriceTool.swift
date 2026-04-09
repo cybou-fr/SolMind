@@ -5,7 +5,7 @@ import Foundation
 
 struct PriceTool: Tool {
     let name = "getPrice"
-    let description = "Get the current USD price of a Solana token by its symbol or mint address. Examples: SOL, USDC, BTC."
+    let description = "Get current USD price for a Solana token by symbol or mint address."
 
     private let priceService: PriceService
 
@@ -15,7 +15,7 @@ struct PriceTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Token symbol (e.g. SOL, USDC, BTC) or mint address")
+        @Guide(description: "Token symbol or mint address")
         var tokenSymbol: String
     }
 

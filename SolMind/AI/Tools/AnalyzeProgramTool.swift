@@ -5,12 +5,7 @@ import Foundation
 
 struct AnalyzeProgramTool: Tool {
     let name = "analyzeProgram"
-    let description = """
-        Look up and explain any Solana account or program by address or name. \
-        Returns what a program does, who owns it, its category, and useful context. \
-        Works for system programs, DeFi protocols, NFT programs, and any unknown address. \
-        Also accepts partial names like "Jupiter", "Raydium", "Marinade", "Metaplex".
-        """
+    let description = "Look up any Solana program or account by base58 address or name (e.g. Jupiter, Raydium, Metaplex)."
 
     private let solanaClient: SolanaClient
 
@@ -20,7 +15,7 @@ struct AnalyzeProgramTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Solana account/program address (base58) OR a program name like 'Jupiter', 'Raydium', 'SPL Token', 'Marinade'")
+        @Guide(description: "Base58 address or program name")
         var query: String
     }
 

@@ -5,8 +5,9 @@ import SwiftUI
 struct NFTGalleryView: View {
     @Environment(WalletViewModel.self) private var walletViewModel
     @State private var nfts: [NFTAsset] = []
-    @State private var isLoading = false
+    @State private var isLoading = true
     @State private var errorMessage: String?
+    @State private var selectedNFT: NFTAsset?
 
     private let heliusService = HeliusService()
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 12)]
@@ -48,11 +49,16 @@ struct NFTGalleryView: View {
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(nfts) { nft in
                             NFTCard(nft: nft)
+                                .onTapGesture { selectedNFT = nft }
+                                .accessibilityAddTraits(.isButton)
                         }
                     }
                     .padding()
                 }
                 .refreshable { await loadNFTs() }
+                .sheet(item: $selectedNFT) { nft in
+                    NFTDetailView(nft: nft)
+                }
             }
         }
         .navigationTitle("NFT Gallery")

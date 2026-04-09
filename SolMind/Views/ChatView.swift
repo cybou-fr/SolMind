@@ -303,6 +303,7 @@ struct ChatView: View {
                     .buttonStyle(.bordered)
                     .font(.caption)
                     .tint(.accentColor)
+                    .frame(minHeight: 28)
                 }
             }
             .padding(.horizontal, 16)
@@ -333,8 +334,10 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
+                    .opacity(vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.isProcessing ? 0.35 : 1)
             }
             .disabled(vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.isProcessing)
+            .accessibilityLabel(vm.isProcessing ? "Sending message" : "Send message")
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 12)

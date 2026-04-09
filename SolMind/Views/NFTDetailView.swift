@@ -95,7 +95,9 @@ struct NFTDetailView: View {
                 .padding()
             }
             .navigationTitle("NFT Details")
+#if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+#endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

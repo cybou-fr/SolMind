@@ -5,7 +5,7 @@ import Foundation
 
 struct SwapTool: Tool {
     let name = "swapTokens"
-    let description = "Swap tokens using Jupiter DEX aggregator on Solana devnet. Shows a native confirmation card before executing — never ask the user to type 'confirmed: true' or similar text."
+    let description = "Swap tokens via Jupiter DEX. Devnet has no liquidity (will fail). Requires confirmation."
 
     private let walletManager: WalletManager
     private let jupiterService: JupiterService
@@ -21,11 +21,11 @@ struct SwapTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Source token symbol or mint address (e.g. SOL)")
+        @Guide(description: "Source token symbol or mint")
         var fromToken: String
-        @Guide(description: "Destination token symbol or mint address (e.g. USDC)")
+        @Guide(description: "Destination token symbol or mint")
         var toToken: String
-        @Guide(description: "Amount to swap in token units")
+        @Guide(description: "Amount to swap")
         var amount: Double
     }
 
@@ -96,11 +96,7 @@ struct SwapTool: Tool {
                 return "⚠️ DEVNET: sendTransaction returned an unexpected response. The swap may not have been submitted. Check the explorer manually."
             }
             await MainActor.run { ToastManager.shared.success("✓ Swap executed!") }
-            return """
-            ✅ DEVNET: Swap executed!
-            Signature: \(signature)
-            Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
-            """
+            return "✅ DEVNET: Swap executed! TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Swap failed: \(error.localizedDescription)") }
             return "Swap execution failed: \(error.localizedDescription)"

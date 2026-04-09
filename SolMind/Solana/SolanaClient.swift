@@ -4,15 +4,19 @@ import Foundation
 
 actor SolanaClient {
     private let rpcURL: URL
-    private let urlSession: URLSession
+    private var urlSession: URLSession   // var — recreated on QUIC/connection-loss errors
     private var requestID = 0
 
     init(rpcURL: URL = SolanaNetwork.rpcURL) {
         self.rpcURL = rpcURL
+        self.urlSession = Self.makeSession()
+    }
+
+    private static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 20   // 20 s per individual request
-        config.timeoutIntervalForResource = 30  // 30 s total including retries
-        self.urlSession = URLSession(configuration: config)
+        config.timeoutIntervalForRequest = 30   // 30 s per individual request
+        config.timeoutIntervalForResource = 90  // 90 s total across retries
+        return URLSession(configuration: config)
     }
 
     // MARK: - getBalance
@@ -148,7 +152,8 @@ actor SolanaClient {
             }
             try await Task.sleep(nanoseconds: 1_500_000_000)
         }
-        return false
+        // Timed out — throw instead of returning false so callers can surface the issue
+        throw RPCError(code: -32002, message: "Transaction not confirmed after \(maxAttempts) attempts (~\(maxAttempts * 2)s). It may still be processing — check the Explorer.")
     }
 
     // MARK: - Private Helpers
@@ -175,16 +180,21 @@ actor SolanaClient {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.httpBody = bodyData
 
-        // Retry up to 3 times on transient network errors (delays: 500ms, 1000ms)
+        // Retry up to 5 times on transient errors; backoff: 1s, 2s, 3s, 4s
+        // On connection-loss (QUIC/HTTP3 drop), recreate the URLSession before retrying.
+        let delays: [UInt64] = [1_000_000_000, 2_000_000_000, 3_000_000_000, 4_000_000_000]
         var lastError: Error?
-        for attempt in 0..<3 {
+        for attempt in 0..<5 {
             do {
                 let (data, _) = try await urlSession.data(for: urlRequest)
                 return data
-            } catch let urlError as URLError where isTransientURLError(urlError) && attempt < 2 {
+            } catch let urlError as URLError where isTransientURLError(urlError) && attempt < 4 {
                 lastError = urlError
-                let nanoseconds = UInt64(500_000_000) * UInt64(attempt + 1)
-                try? await Task.sleep(nanoseconds: nanoseconds)
+                // QUIC/HTTP3 connections can drop silently; recreate session to force new connection
+                if urlError.code == .networkConnectionLost {
+                    urlSession = Self.makeSession()
+                }
+                try? await Task.sleep(nanoseconds: delays[min(attempt, 3)])
             } catch {
                 throw error
             }

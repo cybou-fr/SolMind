@@ -17,7 +17,7 @@ struct TransactionHistoryTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Number of transactions to return (max 20, default 5)")
+        @Guide(description: "Count (max 20, default 5)")
         var limit: Int?
     }
 

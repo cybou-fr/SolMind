@@ -31,6 +31,10 @@ class WalletViewModel {
     /// All wallet addresses stored on this device, including the active one.
     var allAddresses: [String] { walletManager.allAddresses }
 
+    /// Set to true when the last SOL balance fetch failed (network/RPC error).
+    /// Views can use this to show a stale-data indicator.
+    var lastRefreshFailed = false
+
     // MARK: - Setup
 
     func setup() async {
@@ -95,6 +99,9 @@ class WalletViewModel {
             solBalance = balance
             let price = await priceFetch
             solUSDValue = price.map { balance * $0 }
+            lastRefreshFailed = false
+        } else {
+            lastRefreshFailed = true
         }
 
         if let tokenAccounts = try? await tokenFetch {
@@ -168,7 +175,7 @@ class WalletViewModel {
     }
 
     private func knownName(for mint: String) -> String {
-        knownTokens[mint]?.name ?? "Unknown Token"
+        knownTokens[mint]?.name ?? "Token \(mint.prefix(6))…"
     }
 
     private let knownTokens: [String: (symbol: String, name: String)] = [

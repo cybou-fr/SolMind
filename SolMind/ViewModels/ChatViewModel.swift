@@ -29,6 +29,7 @@ class ChatViewModel {
     private let aiSession = AISession()
     private let solanaClient = SolanaClient()
     private let store = ConversationStore()
+    private var confirmationHandlerRef: TransactionConfirmationHandler?
 
     // Weak-ish references injected by setupAI — safe since all @MainActor same lifetime
     private var walletVM: WalletViewModel?
@@ -69,6 +70,7 @@ class ChatViewModel {
     ) {
         self.walletVM = walletViewModel
         self.statsVM = statsViewModel
+        self.confirmationHandlerRef = confirmationHandler
 
         let jupiterService = JupiterService()
         let heliusService = HeliusService()
@@ -94,36 +96,40 @@ class ChatViewModel {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isProcessing else { return }
 
+        // Stateless: fresh session + full context injection on every message.
+        // Prevents context accumulation across turns (4096-token limit).
+        aiSession.reset()
+        hasInjectedContext = false
+
         let userMessage = ChatMessage(role: .user, content: trimmed, timestamp: Date())
         activeConversation?.messages.append(userMessage)
         inputText = ""
         isProcessing = true
         currentSuggestions = []
         sessionMessageCount += 1
+        // Reset confirmation lockout so the first tool call in this message can always show a card.
+        confirmationHandlerRef?.resetLockout()
 
         let assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
         activeConversation?.messages.append(assistantMsg)
         let msgIndex = (activeConversation?.messages.count ?? 1) - 1
 
         do {
-            // Build contextual prompt (injects wallet/network context on first message)
+            // Build contextual prompt (always injects wallet/network context — stateless mode)
             let prompt = buildContextualPrompt(userText: trimmed)
 
             let start = Date()
             let fullResponse = try await streamWithRecovery(prompt)
             lastResponseTime = Date().timeIntervalSince(start)
 
-            activeConversation?.messages[msgIndex].content = fullResponse
-            activeConversation?.messages[msgIndex].isStreaming = false
+            let finalContent = isSuspiciousResponse(fullResponse)
+                ? """
+                  ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
 
-            // Security: block responses that solicit sensitive credentials
-            if isSuspiciousResponse(fullResponse) {
-                activeConversation?.messages[msgIndex].content = """
-                ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
-
-                SolMind will NEVER ask for your private key. If you see such a request, it is a scam attempt. Your wallet is managed securely on-device.
-                """
-            }
+                  SolMind will NEVER ask for your private key. If you see such a request, it is a scam attempt. Your wallet is managed securely on-device.
+                  """
+                : fullResponse
+            updateMessage(at: msgIndex, content: finalContent, isStreaming: false)
 
             // Auto-title conversation from first user message
             if activeConversation?.messages.count == 2,
@@ -142,24 +148,24 @@ class ChatViewModel {
             scheduleBalanceRefreshIfNeeded(for: fullResponse)
 
         } catch AIError.contextWindowExceeded {
-            // Auto-reset the session and retry the same request once in the fresh context.
+            // Session was already reset at the top of sendMessage; reset again after overflow just in case.
             aiSession.reset()
             hasInjectedContext = false
             showContextResetBannerBriefly()
+            // Tools may have executed successfully before overflow — refresh balance to pick up any changes.
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                await walletVM?.refreshBalance()
+            }
             let retryPrompt = buildContextualPrompt(userText: trimmed)
             do {
                 let start = Date()
                 let retryResponse = try await collectStream(retryPrompt)
                 lastResponseTime = Date().timeIntervalSince(start)
-                activeConversation?.messages[msgIndex].content = retryResponse
-                activeConversation?.messages[msgIndex].isStreaming = false
-                if isSuspiciousResponse(retryResponse) {
-                    activeConversation?.messages[msgIndex].content = """
-                    ⚠️ Security Warning: The AI generated a response that appeared to request sensitive information (private key or seed phrase). This response has been blocked.
-
-                    SolMind will NEVER ask for your private key. If you see such a request, it is a scam attempt. Your wallet is managed securely on-device.
-                    """
-                }
+                let retryContent = isSuspiciousResponse(retryResponse)
+                    ? "⚠️ Security Warning: The AI generated a response that appeared to request sensitive information. This response has been blocked."
+                    : retryResponse
+                updateMessage(at: msgIndex, content: retryContent, isStreaming: false)
                 if activeConversation?.messages.count == 2,
                    let title = activeConversation?.messages.first?.content {
                     activeConversation?.title = String(title.prefix(40))
@@ -170,18 +176,18 @@ class ChatViewModel {
                     walletHasBalance: (walletVM?.solBalance ?? 0) > 0
                 )
             } catch {
-                activeConversation?.messages[msgIndex].content = """
-                ⚠️ The conversation context window was exceeded and could not be recovered. \
-                Please start a new chat (⌘K) and repeat your request.
-                """
-                activeConversation?.messages[msgIndex].isStreaming = false
+                updateMessage(at: msgIndex,
+                              content: "⚠️ The conversation context window was exceeded and could not be recovered. Please start a new chat (⌘K) and repeat your request.",
+                              isStreaming: false)
+                confirmationHandlerRef?.clearPending()
             }
             isProcessing = false
             persistActive()
+            aiSession.reset()   // clean slate for next user message
             return
         } catch {
-            activeConversation?.messages[msgIndex].content = error.localizedDescription
-            activeConversation?.messages[msgIndex].isStreaming = false
+            updateMessage(at: msgIndex, content: error.localizedDescription, isStreaming: false)
+            confirmationHandlerRef?.clearPending()
             if error.localizedDescription.contains("not available") ||
                error.localizedDescription.contains("not initialized") {
                 aiUnavailable = true
@@ -190,6 +196,7 @@ class ChatViewModel {
 
         isProcessing = false
         persistActive()
+        aiSession.reset()   // clean slate for next user message
     }
 
     // MARK: - Conversation Management
@@ -239,6 +246,16 @@ class ChatViewModel {
         )
     }
 
+    // MARK: - Safe message mutation
+
+    /// Bounds-checked write to a streaming assistant message.
+    /// Guards against the conversation being deleted while the AI is generating.
+    private func updateMessage(at index: Int, content: String, isStreaming: Bool) {
+        guard let convo = activeConversation, index < convo.messages.count else { return }
+        activeConversation?.messages[index].content = content
+        activeConversation?.messages[index].isStreaming = isStreaming
+    }
+
     // MARK: - Streaming with context-window recovery
 
     private func streamWithRecovery(_ prompt: String) async throws -> String {
@@ -256,10 +273,13 @@ class ChatViewModel {
     private func isContextWindowError(_ error: Error) -> Bool {
         if case AIError.contextWindowExceeded = error { return true }
         let text = error.localizedDescription.lowercased()
+        // Apple FoundationModels error text: "Context length of 4096 was exceeded during singleExtend."
         return text.contains("4096")
             || text.contains("context length")
             || text.contains("context window")
             || text.contains("exceeded")
+            || text.contains("singleextend")
+            || text.contains("inferencefailed")
             || text.contains("generationerror")
             || text.contains("error -1")
     }
@@ -268,10 +288,9 @@ class ChatViewModel {
         var result = ""
         for try await chunk in aiSession.stream(prompt) {
             result = chunk
-            // Update streaming content in real-time
-            let msgIndex = (activeConversation?.messages.count ?? 1) - 1
-            if msgIndex >= 0 {
-                activeConversation?.messages[msgIndex].content = result
+            // Update streaming content in real-time (bounds-checked)
+            if let count = activeConversation?.messages.count, count > 0 {
+                activeConversation?.messages[count - 1].content = result
             }
         }
         return result
@@ -285,14 +304,15 @@ class ChatViewModel {
         guard let walletVM else { return }
         let lower = response.lowercased()
 
-        // Airdrop confirmation — longer delay since faucet transactions are slower
-        let isAirdrop = lower.contains("airdrop of") && lower.contains("sol requested")
-        // Transaction / swap / token creation
-        let isTransfer = lower.contains("✅ devnet: transaction sent")
-            || lower.contains("✅ devnet: token transfer sent")
-            || lower.contains("✅ devnet: swap executed")
-            || lower.contains("devnet: token") && lower.contains("created successfully")
-            || lower.contains("✅ devnet: nft minted")
+        // Airdrop — longer delay since faucet transactions are slower
+        let isAirdrop = lower.contains("airdrop") && lower.contains("sol")
+        // Any state-changing tool that reports devnet success (✅ or ⚠️ prefix)
+        let isTransfer = lower.contains("✅ devnet")
+            || lower.contains("devnet: token created")
+            || lower.contains("devnet: nft minted")
+            || lower.contains("devnet: transaction sent")
+            || lower.contains("devnet: token transfer sent")
+            || lower.contains("devnet: swap executed")
 
         guard isAirdrop || isTransfer else { return }
 
@@ -316,6 +336,7 @@ class ChatViewModel {
 
     private func showContextResetBannerBriefly() {
         showContextResetBanner = true
+        ToastManager.shared.info("Conversation context refreshed to free up memory.")
         Task {
             try? await Task.sleep(for: .seconds(4))
             showContextResetBanner = false

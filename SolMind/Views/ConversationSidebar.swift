@@ -165,6 +165,7 @@ struct ConversationSidebar: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .disabled(walletViewModel.publicKey == nil)
                 .help("Copy wallet address")
                 Spacer()
                 Circle()

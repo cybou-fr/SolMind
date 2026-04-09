@@ -36,14 +36,16 @@ enum SolanaKnowledge {
         if q.contains("defi") || q.contains("swap") || q.contains("liquidity") || q.contains("yield") || q.contains("lend") {
             return "Top DeFi: Jupiter (swap aggregator), Raydium+Orca (AMMs), Kamino+MarginFi (lending), Drift (perps), Meteora (dynamic pools), Jito (MEV). Jupiter is always the best entry point for swaps."
         }
-        if q.contains("nft") || q.contains("mint") || q.contains("compressed") || q.contains("metaplex") {
-            return "NFTs use Metaplex standard. Magic Eden is the largest marketplace; Tensor is for pro traders. Compressed NFTs (cNFTs) cost ~$0.000005 each via Helius Bubblegum."
+        // SPL token check before NFT — "create token", "mint tokens", "spl" must not trigger NFT advice
+        if q.contains("token") || q.contains("spl") || q.contains("create coin") || q.contains("fungible") {
+            return "SPL Token Program creates fungible tokens. Use createToken tool for new tokens. Token-2022 adds extensions. USDC is the most-used stablecoin on Solana."
+        }
+        // NFT check — does NOT include generic "mint" to avoid misrouting token-mint requests
+        if q.contains("nft") || q.contains("compressed") || q.contains("metaplex") || q.contains("bubblegum") || q.contains("collectible") {
+            return "NFTs use Metaplex standard. Magic Eden is the largest marketplace; Tensor is for pro traders. Compressed NFTs (cNFTs) cost ~$0.000005 each via Helius Bubblegum. Use mintNFT tool."
         }
         if q.contains("fee") || q.contains("cost") || q.contains("rent") || q.contains("lamport") {
             return "Fees: ~$0.000025/tx (5000 lamports). Rent-exempt: ~0.002 SOL for small accounts. Creating ATA: ~0.002 SOL. Priority fees are optional micro-lamport tips."
-        }
-        if q.contains("token") || q.contains("spl") || q.contains("usdc") || q.contains("mint") {
-            return "SPL Token Program handles fungible tokens. Token-2022 adds extensions (confidential, interest-bearing, transfer hooks, on-chain metadata). USDC is most-used stablecoin."
         }
         if q.contains("wallet") || q.contains("phantom") || q.contains("backpack") {
             return "Wallets: Phantom (best UX, multi-chain), Backpack (xNFTs), Solflare (best for staking), Ledger (hardware security)."

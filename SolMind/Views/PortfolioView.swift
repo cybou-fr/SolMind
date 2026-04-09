@@ -14,6 +14,7 @@ struct PortfolioView: View {
     @State private var addressCopied = false
     @State private var copiedSignature: String? = nil
     @State private var isRequestingAirdrop = false
+    @State private var showQRSheet = false
 
     var body: some View {
         List {
@@ -63,12 +64,24 @@ struct PortfolioView: View {
                             await walletViewModel.refreshTransactionHistory()
                             isRefreshing = false
                             withAnimation(.default) { rotationDegrees = 0 }
+                            if walletViewModel.lastRefreshFailed {
+                                ToastManager.shared.warning("Balance refresh failed — showing cached data")
+                            }
                         }
                     } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .rotationEffect(.degrees(rotationDegrees))
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .rotationEffect(.degrees(rotationDegrees))
+                            if walletViewModel.lastRefreshFailed {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .font(.caption2)
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
+                    .disabled(isRefreshing)
+                    .accessibilityLabel(walletViewModel.lastRefreshFailed ? "Refresh balance (last attempt failed)" : "Refresh balance")
                 }
                 .padding(.vertical, 4)
 
@@ -85,7 +98,23 @@ struct PortfolioView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .disabled(walletViewModel.publicKey == nil)
                 .help("Copy wallet address")
+
+                Button {
+                    showQRSheet = true
+                } label: {
+                    Label("Receive / QR", systemImage: "qrcode")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .help("Show wallet QR code")
+            }
+            .sheet(isPresented: $showQRSheet) {
+                if let address = walletViewModel.publicKey {
+                    QRCodeSheet(address: address)
+                }
             }
 
             // Token Balances
@@ -233,6 +262,9 @@ struct PortfolioView: View {
             Image(systemName: tx.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundStyle(tx.isSuccess ? Color.green : Color.red)
                 .font(.title3)
+                .frame(width: 32, height: 32)
+                .background((tx.isSuccess ? Color.green : Color.red).opacity(0.12), in: Circle())
+                .accessibilityLabel(tx.isSuccess ? "Success" : "Failed")
 
             VStack(alignment: .leading, spacing: 2) {
                 // Full signature, monospaced, wraps on narrow screens

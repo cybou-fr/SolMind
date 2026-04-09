@@ -74,6 +74,7 @@ struct SolanaStatsBar: View {
             }
             .buttonStyle(.plain)
             .disabled(statsVM.isRefreshing)
+            .accessibilityLabel("Refresh Solana stats")
             .padding(.trailing, 10)
         }
         .frame(height: 28)

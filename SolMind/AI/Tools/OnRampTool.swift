@@ -10,7 +10,7 @@ import UIKit
 
 struct OnRampTool: Tool {
     let name = "buyWithFiat"
-    let description = "Open the MoonPay widget to buy SOL with fiat currency (USD, EUR, etc.) via credit card. This is a sandbox demo — use test card 4242 4242 4242 4242."
+    let description = "Open MoonPay sandbox to buy SOL with fiat. Demo only (test card 4242 4242 4242 4242)."
 
     private let walletManager: WalletManager
 
@@ -20,9 +20,9 @@ struct OnRampTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Amount in fiat currency (e.g. 50 for $50)")
+        @Guide(description: "Fiat amount (default 50)")
         var amount: Double?
-        @Guide(description: "Fiat currency code (e.g. usd, eur). Defaults to usd.")
+        @Guide(description: "Currency code (default usd)")
         var currency: String?
     }
 

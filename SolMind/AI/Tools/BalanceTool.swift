@@ -5,7 +5,7 @@ import Foundation
 
 struct BalanceTool: Tool {
     let name = "getBalance"
-    let description = "Get the SOL or SPL token balance of the connected wallet. Pass nil for tokenMint to get SOL balance."
+    let description = "Get SOL and SPL token balances for the active wallet."
 
     private let walletManager: WalletManager
     private let solanaClient: SolanaClient
@@ -17,7 +17,7 @@ struct BalanceTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Optional SPL token mint address. Omit for SOL balance.")
+        @Guide(description: "SPL mint address (nil = SOL)")
         var tokenMint: String?
     }
 
@@ -49,6 +49,14 @@ struct BalanceTool: Tool {
                 return result
             }
         } catch {
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("timed out") || msg.contains("network") || msg.contains("offline") || msg.contains("connection") {
+                return "Network error: Could not reach the Solana RPC. Check your internet connection and try again."
+            } else if msg.contains("429") || msg.contains("rate") {
+                return "RPC rate limit reached. Wait a moment and try again."
+            } else if msg.contains("403") || msg.contains("401") {
+                return "RPC authentication error. Check your API key in Settings."
+            }
             return "Failed to fetch balance: \(error.localizedDescription)"
         }
     }

@@ -5,7 +5,7 @@ import Foundation
 
 struct SendTool: Tool {
     let name = "sendTokens"
-    let description = "Send SOL or SPL tokens to a recipient address. Shows a native confirmation card before executing — never ask the user to type 'confirmed: true' or similar text."
+    let description = "Send SOL or SPL tokens to a recipient. Requires confirmation."
 
     private let walletManager: WalletManager
     private let solanaClient: SolanaClient
@@ -19,11 +19,11 @@ struct SendTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Recipient Solana base58 address (must be 32-byte base58, not a domain)")
+        @Guide(description: "Recipient base58 address")
         var recipient: String
-        @Guide(description: "Amount to send in token units (e.g. 0.5 for 0.5 SOL, or 10 for 10 USDC)")
+        @Guide(description: "Amount in token units")
         var amount: Double
-        @Guide(description: "Optional SPL token mint address. Omit to send native SOL.")
+        @Guide(description: "SPL mint address (nil = SOL)")
         var tokenMint: String?
     }
 
@@ -85,12 +85,7 @@ struct SendTool: Tool {
             }
 
             await MainActor.run { ToastManager.shared.success("✓ \(amount) SOL sent!") }
-            return """
-            ✅ DEVNET: Transaction sent!
-            Sent: \(amount) SOL → \(recipient)
-            Signature: \(signature)
-            Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
-            """
+            return "✅ DEVNET: Transaction sent! \(amount) SOL → \(recipient). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Send failed: \(error.localizedDescription)") }
             return "Transaction failed: \(error.localizedDescription)"
@@ -157,13 +152,7 @@ struct SendTool: Tool {
             }
 
             await MainActor.run { ToastManager.shared.success("✓ \(amount) tokens sent!") }
-            return """
-            ✅ DEVNET: Token transfer sent!
-            Sent: \(amount) tokens → \(recipient)
-            Mint: \(mintAddress)
-            Signature: \(signature)
-            Explorer: \(SolanaNetwork.explorerURL(signature: signature).absoluteString)
-            """
+            return "✅ DEVNET: Token transfer sent! \(amount) tokens → \(recipient). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Transfer failed: \(error.localizedDescription)") }
             return "SPL transfer failed: \(error.localizedDescription)"

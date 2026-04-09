@@ -54,6 +54,25 @@ class HeliusService {
         }
         struct DASMetadata: Decodable {
             let name: String?
+            let description: String?
+            let attributes: [DASAttribute]?
+        }
+        struct DASAttribute: Decodable {
+            let traitType: String?
+            let value: String?
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                traitType = try c.decodeIfPresent(String.self, forKey: .traitType)
+                // value can be String or Number in DAS responses
+                if let s = try? c.decodeIfPresent(String.self, forKey: .value) {
+                    value = s
+                } else if let n = try? c.decodeIfPresent(Double.self, forKey: .value) {
+                    value = n.truncatingRemainder(dividingBy: 1) == 0 ? String(Int(n)) : String(n)
+                } else {
+                    value = nil
+                }
+            }
+            enum CodingKeys: String, CodingKey { case traitType, value }
         }
         struct DASLinks: Decodable {
             let image: String?
@@ -63,13 +82,21 @@ class HeliusService {
             let groupValue: String
         }
 
-        let response = try JSONDecoder().decode(DASResponse.self, from: data)
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let response = try decoder.decode(DASResponse.self, from: data)
         return response.result?.items.map { item in
-            NFTAsset(
+            let attrs = item.content?.metadata?.attributes?.compactMap { attr -> (trait: String, value: String)? in
+                guard let t = attr.traitType, let v = attr.value else { return nil }
+                return (trait: t, value: v)
+            } ?? []
+            return NFTAsset(
                 id: item.id,
                 name: item.content?.metadata?.name ?? "Unknown NFT",
                 imageURL: item.content?.links?.image.flatMap { URL(string: $0) },
-                collectionName: item.grouping?.first(where: { $0.groupKey == "collection" })?.groupValue
+                collectionName: item.grouping?.first(where: { $0.groupKey == "collection" })?.groupValue,
+                nftDescription: item.content?.metadata?.description,
+                attributes: attrs
             )
         } ?? []
     }
@@ -104,7 +131,8 @@ class HeliusService {
                 "owner": owner,
                 "description": description,
                 "attributes": attributeObjects,
-                "imageUrl": imageUrl.isEmpty ? "https://placehold.co/400x400/1a1a2e/white?text=\(symbol.uppercased())" : imageUrl,
+                "imageUrl": imageUrl.isEmpty ? "https://placehold.co/400x400/6C5CE7/FFFFFF?text=SolMind" : imageUrl,
+                //\(symbol.uppercased())" : imageUrl,
                 "externalUrl": "https://solmind.app",
                 "sellerFeeBasisPoints": 0
             ]
@@ -153,6 +181,18 @@ struct NFTAsset: Identifiable {
     let name: String
     let imageURL: URL?
     let collectionName: String?
+    let nftDescription: String?
+    let attributes: [(trait: String, value: String)]
+
+    init(id: String, name: String, imageURL: URL?, collectionName: String?,
+         nftDescription: String? = nil, attributes: [(trait: String, value: String)] = []) {
+        self.id = id
+        self.name = name
+        self.imageURL = imageURL
+        self.collectionName = collectionName
+        self.nftDescription = nftDescription
+        self.attributes = attributes
+    }
 }
 
 enum HeliusError: LocalizedError {

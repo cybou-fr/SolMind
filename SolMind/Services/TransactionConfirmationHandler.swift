@@ -23,6 +23,12 @@ final class TransactionConfirmationHandler {
 
     private var continuation: CheckedContinuation<Bool, Never>? = nil
 
+    /// After the user taps Confirm, we lock new confirmations for this duration.
+    /// This prevents the FoundationModels model from retrying a failed tool call and
+    /// showing a duplicate confirmation popup in a loop.
+    private var lockedUntil: Date? = nil
+    private static let lockoutDuration: TimeInterval = 12
+
     // MARK: - Called by tools (any isolation)
 
     /// Suspends the calling tool until the user taps Confirm or Cancel.
@@ -30,6 +36,12 @@ final class TransactionConfirmationHandler {
     nonisolated func requestConfirmation(_ preview: TransactionPreview) async -> Bool {
         await withCheckedContinuation { cont in
             Task { @MainActor in
+                // If a recent confirmation was already acted on, reject retry attempts
+                // to prevent AI-driven loops (model retrying a failed transaction).
+                if let locked = self.lockedUntil, Date() < locked {
+                    cont.resume(returning: false)
+                    return
+                }
                 // If another confirmation is unexpectedly pending, cancel it first.
                 self.continuation?.resume(returning: false)
                 self.pendingPreview = preview
@@ -41,6 +53,8 @@ final class TransactionConfirmationHandler {
     // MARK: - Called by UI (MainActor)
 
     func confirm() {
+        // Lock new confirmations briefly so a failing tool can't immediately re-popup.
+        lockedUntil = Date().addingTimeInterval(Self.lockoutDuration)
         let cont = continuation
         pendingPreview = nil
         continuation = nil
@@ -52,5 +66,21 @@ final class TransactionConfirmationHandler {
         pendingPreview = nil
         continuation = nil
         cont?.resume(returning: false)
+    }
+
+    /// Clears any pending confirmation without user action (e.g. when the AI stream is
+    /// cancelled mid-flight). The suspended tool receives `false` and aborts the transaction.
+    func clearPending() {
+        let cont = continuation
+        pendingPreview = nil
+        continuation = nil
+        lockedUntil = nil
+        cont?.resume(returning: false)
+    }
+
+    /// Called at the start of a new user message so legitimate follow-up
+    /// transactions after a successful one are never blocked.
+    func resetLockout() {
+        lockedUntil = nil
     }
 }

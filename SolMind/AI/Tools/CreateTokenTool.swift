@@ -5,11 +5,7 @@ import Foundation
 
 struct CreateTokenTool: Tool {
     let name = "createToken"
-    let description = """
-    Create a new SPL token (fungible token) on Solana devnet. Generates a fresh mint address, \
-    initialises the mint, creates an associated token account, and mints the initial supply to the \
-    connected wallet. Requires ~0.005 SOL for rent. Shows a native confirmation card before executing.
-    """
+    let description = "Create a new SPL fungible token on devnet with mint address and initial supply. Requires ~0.005 SOL. Requires confirmation."
 
     private let walletManager: WalletManager
     private let solanaClient: SolanaClient
@@ -23,16 +19,16 @@ struct CreateTokenTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Human-readable token name (e.g. 'SolMind Token')")
+        @Guide(description: "Token name")
         var tokenName: String
 
-        @Guide(description: "Token ticker symbol, max 10 chars (e.g. 'SMND')")
+        @Guide(description: "Ticker symbol (max 10 chars)")
         var symbol: String
 
-        @Guide(description: "Decimal places for the token (0 = whole units, 6 = micro units like USDC). Default: 6.")
+        @Guide(description: "Decimal places (default 6)")
         var decimals: Int?
 
-        @Guide(description: "Total initial supply to mint into the connected wallet (e.g. 1000000 for 1 M tokens). Default: 1 000 000.")
+        @Guide(description: "Initial supply (default 1000000)")
         var totalSupply: Double?
     }
 
@@ -63,7 +59,7 @@ struct CreateTokenTool: Tool {
 
         let payer: Keypair
         do { payer = try walletManager.keypairForSigning() } catch {
-            return "Wallet signing unavailable: \(error.localizedDescription)"
+            return "⚠️ TERMINAL: Wallet signing unavailable — \(error.localizedDescription). Do NOT retry automatically."
         }
 
         // Generate ephemeral keypair for the new mint address
@@ -80,23 +76,23 @@ struct CreateTokenTool: Tool {
                 recentBlockhash: blockhash1
             )
         } catch {
-            return "Failed to build mint transaction: \(error.localizedDescription)"
+            return "⚠️ TERMINAL: Could not build mint transaction — \(error.localizedDescription). Do NOT retry automatically."
         }
 
         let createSig: String
         do {
             createSig = try await solanaClient.sendTransaction(serialized: createMintTx)
         } catch {
-            return "Failed to create mint account: \(error.localizedDescription). Make sure you have enough SOL (~0.005) for rent."
+            return "⚠️ TERMINAL: Token creation failed before any on-chain state was written. Reason: \(error.localizedDescription). The user needs ~0.005 SOL for rent. Do NOT retry automatically."
         }
 
         guard createSig.count >= 80, Base58.decode(createSig) != nil else {
-            return "Mint creation returned an invalid signature: \(createSig)"
+            return "⚠️ TERMINAL: Mint creation returned an invalid signature — the transaction may not have been sent. Signature: \(createSig). Do NOT retry automatically."
         }
 
-        // Allow the transaction to land before the next one references the mint account
+        // Give devnet more time to confirm before the second transaction references the mint account
         await MainActor.run { ToastManager.shared.info("Waiting for mint to confirm…") }
-        try await Task.sleep(nanoseconds: 2_500_000_000)
+        try await Task.sleep(nanoseconds: 4_000_000_000)
 
         // --- Transaction 2: createATA (idempotent) + mintTo ---
         let blockhash2 = try await solanaClient.getLatestBlockhash()
@@ -109,35 +105,27 @@ struct CreateTokenTool: Tool {
                 recentBlockhash: blockhash2
             )
         } catch {
-            return "Mint created, but failed to build mint-tokens transaction: \(error.localizedDescription). Mint: \(mintKeypair.publicKeyBase58)"
+            return "⚠️ PARTIAL: Mint account was created at \(mintKeypair.publicKeyBase58) (tx: \(createSig)) but the token-mint transaction could not be built: \(error.localizedDescription). Do NOT retry the whole createToken flow — the mint address already exists."
         }
 
         let mintSig: String
         do {
             mintSig = try await solanaClient.sendTransaction(serialized: mintTx)
         } catch {
-            return "Mint account created, but failed to mint tokens: \(error.localizedDescription). Mint: \(mintKeypair.publicKeyBase58)"
+            return "⚠️ PARTIAL: Mint account was created at \(mintKeypair.publicKeyBase58) (tx: \(createSig)) but minting tokens failed: \(error.localizedDescription). Do NOT call createToken again — inform the user the mint exists but has no supply yet."
         }
 
         guard mintSig.count >= 80, Base58.decode(mintSig) != nil else {
-            return "Mint-tokens transaction returned an invalid signature: \(mintSig). Mint: \(mintKeypair.publicKeyBase58)"
+            return "⚠️ PARTIAL: Mint-tokens transaction returned an invalid signature. Mint address: \(mintKeypair.publicKeyBase58). Do NOT retry automatically."
         }
 
         let mintAddress = mintKeypair.publicKeyBase58
         await MainActor.run { ToastManager.shared.success("✓ Token '\(arguments.symbol.uppercased())' created!") }
         return """
-        ⚠️ DEVNET: Token '\(arguments.tokenName)' created successfully!
-
-        Symbol: \(arguments.symbol.uppercased())
-        Decimals: \(decimals)
-        Total Supply: \(formatSupply(supply)) \(arguments.symbol.uppercased())
-        Mint Address: \(mintAddress)
-
-        Transactions:
-        • Create mint: \(SolanaNetwork.explorerURL(signature: createSig).absoluteString)
-        • Mint tokens: \(SolanaNetwork.explorerURL(signature: mintSig).absoluteString)
-
-        View on Explorer: \(SolanaNetwork.explorerURL(address: mintAddress).absoluteString)
+        ✅ DEVNET: Token created successfully!
+        Name: \(arguments.tokenName) | Symbol: \(arguments.symbol.uppercased()) | Decimals: \(decimals) | Supply: \(formatSupply(supply))
+        Mint: \(mintAddress)
+        TX(create): \(createSig.prefix(12))… TX(mint): \(mintSig.prefix(12))…
         """
     }
 

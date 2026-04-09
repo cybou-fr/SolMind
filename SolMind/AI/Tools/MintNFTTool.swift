@@ -5,11 +5,7 @@ import Foundation
 
 struct MintNFTTool: Tool {
     let name = "mintNFT"
-    let description = """
-    Mint a compressed NFT on Solana devnet for the connected wallet using Helius. \
-    Helius covers the transaction fee — no SOL needed. Shows a native confirmation card before minting. \
-    Do NOT ask the user to type 'confirmed: true'.
-    """
+    let description = "Mint a compressed NFT on devnet via Helius (free, Helius pays fee). Requires confirmation."
 
     private let walletManager: WalletManager
     private let heliusService: HeliusService
@@ -23,25 +19,29 @@ struct MintNFTTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Display name for the NFT (e.g. 'SolMind Pioneer #1')")
+        @Guide(description: "NFT display name")
         var name: String
 
-        @Guide(description: "Short symbol/ticker for the NFT collection (e.g. 'SMND')")
+        @Guide(description: "Collection ticker symbol")
         var symbol: String
 
-        @Guide(description: "Human-readable description of the NFT")
+        @Guide(description: "NFT description text")
         var description: String
 
-        @Guide(description: "Direct URL to the NFT image. Leave empty to auto-generate a placeholder.")
+        @Guide(description: "Image URL (empty for default)")
         var imageUrl: String?
 
-        @Guide(description: "Optional list of trait key=value pairs (e.g. ['Background=Blue', 'Rarity=Rare'])")
+        @Guide(description: "Traits as Key=Value strings")
         var traits: [String]?
     }
 
     func call(arguments: Arguments) async throws -> String {
         guard let owner = walletManager.publicKey else {
-            return "Wallet not connected."
+            return "⚠️ TERMINAL: Wallet not connected. Do NOT retry automatically."
+        }
+        let apiKey = AppSettings.shared.effectiveHeliusAPIKey
+        guard !apiKey.isEmpty else {
+            return "⚠️ TERMINAL: Helius API key is not configured. Go to Settings → API Keys and enter a valid Helius devnet key, then try again. Do NOT retry automatically."
         }
 
         let preview = TransactionPreview(
@@ -79,19 +79,13 @@ struct MintNFTTool: Tool {
 
             await MainActor.run { ToastManager.shared.success("✓ NFT '\(arguments.name)' minted!") }
             return """
-            ⚠️ DEVNET: Compressed NFT minted successfully!
-
-            Name: \(arguments.name)
-            Symbol: \(arguments.symbol.uppercased())
+            ✅ DEVNET: NFT minted!
+            Name: \(arguments.name) | Symbol: \(arguments.symbol.uppercased())
             Asset ID: \(result.assetId)
-            Owner: \(owner)
-
-            Transaction: \(SolanaNetwork.explorerURL(signature: result.signature).absoluteString)
-
-            The NFT will appear in your gallery shortly. Refresh your NFT gallery to see it.
+            TX: \(result.signature.prefix(12))…
             """
         } catch {
-            return "NFT mint failed: \(error.localizedDescription). Make sure your Helius API key is configured for devnet."
+            return "⚠️ TERMINAL: NFT mint failed — \(error.localizedDescription). Do NOT retry automatically. The user should check their Helius API key in Settings and try again manually."
         }
     }
 }

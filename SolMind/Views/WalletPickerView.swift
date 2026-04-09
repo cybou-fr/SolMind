@@ -157,6 +157,7 @@ struct WalletPickerView: View {
             }
         }
         .contentShape(Rectangle())
+        .listRowBackground(address == walletViewModel.publicKey ? Color.accentColor.opacity(0.08) : nil)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if walletViewModel.allAddresses.count > 1 {
                 Button(role: .destructive) {
