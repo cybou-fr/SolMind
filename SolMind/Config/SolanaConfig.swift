@@ -3,10 +3,14 @@ import Foundation
 enum SolanaNetwork {
     static let cluster = "devnet"
 
-    /// Primary RPC URL — uses Helius devnet when an API key is configured (higher rate limits),
-    /// otherwise falls back to the public devnet endpoint.
+    /// Primary RPC URL — uses Helius devnet when an API key is configured (higher rate limits +
+    /// NFT DAS APIs), otherwise falls back to the free public devnet endpoint.
+    ///
+    /// Reads UserDefaults directly so this can be called from any actor context without
+    /// crossing a @MainActor boundary (avoids the Swift 6 nonisolated warning).
     static var rpcURL: URL {
-        let key = AppSettings.shared.effectiveHeliusAPIKey
+        let stored = UserDefaults.standard.string(forKey: "solmind.heliusAPIKey") ?? ""
+        let key = stored.isEmpty ? Secrets.heliusAPIKey : stored
         if !key.isEmpty {
             return URL(string: "https://devnet.helius-rpc.com/?api-key=\(key)")!
         }

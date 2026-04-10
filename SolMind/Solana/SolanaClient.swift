@@ -3,12 +3,16 @@ import Foundation
 // MARK: - Solana JSON-RPC Client
 
 actor SolanaClient {
-    private let rpcURL: URL
+    /// When non-nil this URL is always used (e.g. FaucetTool hardcodes specific providers).
+    /// When nil, rpcURL is re-evaluated on every request so a key entered in Settings takes
+    /// effect immediately without recreating the client.
+    private let _fixedURL: URL?
+    private var rpcURL: URL { _fixedURL ?? SolanaNetwork.rpcURL }
     private var urlSession: URLSession   // var — recreated on QUIC/connection-loss errors
     private var requestID = 0
 
-    init(rpcURL: URL = SolanaNetwork.rpcURL) {
-        self.rpcURL = rpcURL
+    init(rpcURL: URL? = nil) {
+        self._fixedURL = rpcURL
         self.urlSession = Self.makeSession()
     }
 
@@ -141,11 +145,16 @@ actor SolanaClient {
     // MARK: - confirmTransaction (poll)
 
     func confirmTransaction(signature: String, maxAttempts: Int = 20) async throws -> Bool {
+        // getSignatureStatuses returns { result: { context: {...}, value: [status_or_null, ...] } }
+        // NOT result: [status_or_null, ...] — so we need a wrapper struct.
+        struct SigStatusesResult: Decodable {
+            let value: [SignatureStatus?]
+        }
         for _ in 0..<maxAttempts {
             let data = try await postRPC(method: "getSignatureStatuses",
                                         params: [[signature], ["searchTransactionHistory": false]])
-            let decoded = try JSONDecoder().decode(RPCResponse<[SignatureStatus?]>.self, from: data)
-            if let statuses = decoded.result, let status = statuses.first ?? nil {
+            let decoded = try JSONDecoder().decode(RPCResponse<SigStatusesResult>.self, from: data)
+            if let status = decoded.result?.value.first ?? nil {
                 if status.confirmationStatus == "confirmed" || status.confirmationStatus == "finalized" {
                     return status.err == nil
                 }
