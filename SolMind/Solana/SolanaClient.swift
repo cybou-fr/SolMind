@@ -145,11 +145,6 @@ actor SolanaClient {
     // MARK: - confirmTransaction (poll)
 
     func confirmTransaction(signature: String, maxAttempts: Int = 20) async throws -> Bool {
-        // getSignatureStatuses returns { result: { context: {...}, value: [status_or_null, ...] } }
-        // NOT result: [status_or_null, ...] — so we need a wrapper struct.
-        struct SigStatusesResult: Decodable {
-            let value: [SignatureStatus?]
-        }
         for _ in 0..<maxAttempts {
             let data = try await postRPC(method: "getSignatureStatuses",
                                         params: [[signature], ["searchTransactionHistory": false]])
@@ -222,7 +217,12 @@ actor SolanaClient {
     }
 }
 
-// MARK: - getSignatureStatuses response additions
+// MARK: - getSignatureStatuses response types
+
+/// Wrapper for getSignatureStatuses result (has context+value envelope)
+struct SigStatusesResult: Decodable, Sendable {
+    let value: [SignatureStatus?]
+}
 
 struct SignatureStatus: Decodable, Sendable {
     let slot: UInt64

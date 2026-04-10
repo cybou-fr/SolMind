@@ -83,21 +83,32 @@ struct PortfolioView: View {
                 }
                 .padding(.vertical, 4)
 
-                Button {
-                    copyAddress(walletViewModel.publicKey ?? "")
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(walletViewModel.displayAddress)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                        Image(systemName: addressCopied ? "checkmark" : "doc.on.doc")
-                            .font(.caption2)
-                            .foregroundStyle(addressCopied ? .green : .secondary)
+                HStack(spacing: 6) {
+                    Button {
+                        copyAddress(walletViewModel.publicKey ?? "")
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(walletViewModel.displayAddress)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                            Image(systemName: addressCopied ? "checkmark" : "doc.on.doc")
+                                .font(.caption2)
+                                .foregroundStyle(addressCopied ? .green : .secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(walletViewModel.publicKey == nil)
+                    .help("Copy wallet address")
+
+                    if let pubkey = walletViewModel.publicKey {
+                        Link(destination: SolanaNetwork.explorerURL(address: pubkey)) {
+                            Image(systemName: "arrow.up.right.square")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .help("View wallet on Solana Explorer")
                     }
                 }
-                .buttonStyle(.plain)
-                .disabled(walletViewModel.publicKey == nil)
-                .help("Copy wallet address")
 
                 Button {
                     showQRSheet = true
@@ -137,6 +148,12 @@ struct PortfolioView: View {
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            Link(destination: SolanaNetwork.explorerURL(address: token.mint)) {
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .help("View mint on Solana Explorer")
                         }
                     }
                 }

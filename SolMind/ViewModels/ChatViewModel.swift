@@ -90,6 +90,15 @@ class ChatViewModel {
         aiSession.initialize(tools: tools)
     }
 
+    // MARK: - Manual Message Insertion
+
+    /// Append a synthetic assistant message (e.g. result of a form-driven mint).
+    func addSystemMessage(_ content: String) {
+        let msg = ChatMessage(role: .assistant, content: content, timestamp: Date())
+        activeConversation?.messages.append(msg)
+        persistActive()
+    }
+
     // MARK: - Send Message
 
     func sendMessage() async {

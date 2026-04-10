@@ -32,7 +32,7 @@ actor SolanaNetworkService {
 
     private var cachedStats: SolanaNetworkStats?
     private let cacheTTL: TimeInterval = 120  // 2 minutes
-    // Computed so AppSettings key changes (e.g. after launch) are picked up on each fetch.
+    // Read UserDefaults directly (thread-safe, no actor boundary) so Settings changes take effect.
     private var rpcURL: URL { SolanaNetwork.rpcURL }
     private var requestID = 0
 
@@ -57,25 +57,14 @@ actor SolanaNetworkService {
 
         guard let eData = try? await epochData else { return nil }
 
-        // Decode epoch info
-        struct EpochResult: Decodable {
-            let absoluteSlot: UInt64
-            let epoch: UInt64
-            let slotIndex: UInt64
-            let slotsInEpoch: UInt64
-        }
-        struct PerfSample: Decodable {
-            let numTransactions: UInt64
-            let samplePeriodSecs: UInt16
-        }
-
         guard let epochInfo = try? JSONDecoder()
-            .decode(RPCResponse<EpochResult>.self, from: eData).result else { return nil }
+            .decode(RPCResponse<NetworkEpochResult>.self, from: eData).result else { return nil }
 
+        let resolvedPerfData = try? await perfData
         var tps: Double? = nil
-        if let pData = try? await perfData,
+        if let pData = resolvedPerfData,
            let samples = try? JSONDecoder()
-                .decode(RPCResponse<[PerfSample]>.self, from: pData).result,
+                .decode(RPCResponse<[NetworkPerfSample]>.self, from: pData).result,
            let first = samples.first,
            first.samplePeriodSecs > 0 {
             tps = Double(first.numTransactions) / Double(first.samplePeriodSecs)
@@ -116,4 +105,18 @@ actor SolanaNetworkService {
         let (data, _) = try await URLSession.shared.data(for: request)
         return data
     }
+}
+
+// MARK: - Decode types (file scope — avoids Swift 6 actor-isolation inheritance)
+
+private struct NetworkEpochResult: Decodable, Sendable {
+    let absoluteSlot: UInt64
+    let epoch: UInt64
+    let slotIndex: UInt64
+    let slotsInEpoch: UInt64
+}
+
+private struct NetworkPerfSample: Decodable, Sendable {
+    let numTransactions: UInt64
+    let samplePeriodSecs: UInt16
 }

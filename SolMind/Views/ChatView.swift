@@ -9,6 +9,7 @@ struct ChatView: View {
     @Environment(SolanaStatsViewModel.self) private var statsVM
 
     @State private var showExportSheet = false
+    @State private var showMintNFTForm = false
 
     var body: some View {
         @Bindable var vm = chatViewModel
@@ -332,6 +333,33 @@ struct ChatView: View {
     private func inputBar(vm: ChatViewModel) -> some View {
         @Bindable var vm = vm
         HStack(spacing: 8) {
+            // Mint NFT compose button
+            Button {
+                showMintNFTForm = true
+            } label: {
+                Image(systemName: "photo.artframe")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Mint NFT with custom image & data")
+            .sheet(isPresented: $showMintNFTForm) {
+                MintNFTFormView(
+                    walletAddress: walletViewModel.publicKey ?? "",
+                    onSuccess: {},
+                    onMinted: { name, symbol, assetId, imageUrl in
+                        let explorerURL = SolanaNetwork.explorerURL(address: assetId).absoluteString
+                        var msg = "✅ **\(name)** [\(symbol)] minted on devnet!\n"
+                        msg += "Asset ID: `\(assetId)`\n"
+                        msg += "[View on Explorer](\(explorerURL))"
+                        if let img = imageUrl, !img.isEmpty {
+                            msg += "\n\n![\(name)](\(img))"
+                        }
+                        chatViewModel.addSystemMessage(msg)
+                    }
+                )
+            }
+
             TextField("Ask SolMind anything…", text: $vm.inputText, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.plain)

@@ -111,6 +111,7 @@ class HeliusService {
         description: String,
         owner: String,
         imageUrl: String,
+        externalUrl: String = "",
         attributes: [[String: String]] = []
     ) async throws -> MintNFTResult {
         var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)!
@@ -132,7 +133,7 @@ class HeliusService {
                 "description": description,
                 "attributes": attributeObjects,
                 "imageUrl": imageUrl.isEmpty ? "https://placehold.co/400x400/6C5CE7/FFFFFF?text=SolMind" : imageUrl,
-                "externalUrl": "https://solmind.app",
+                "externalUrl": externalUrl.isEmpty ? "https://solmind.app" : externalUrl,
                 "sellerFeeBasisPoints": 0
             ]
         ]

@@ -166,6 +166,17 @@ struct NFTCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.secondary.opacity(0.12), lineWidth: 1)
         )
+        .overlay(alignment: .topTrailing) {
+            Link(destination: SolanaNetwork.explorerURL(address: nft.id)) {
+                Image(systemName: "arrow.up.right.square.fill")
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .padding(5)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .help("View on Solana Explorer")
+            .padding(6)
+        }
     }
 
     private var placeholderArtwork: some View {
@@ -197,6 +208,9 @@ struct NFTCard: View {
 struct MintNFTFormView: View {
     let walletAddress: String
     let onSuccess: () -> Void
+    /// Called after a successful mint with (name, symbol, assetId, imageUrl).
+    /// Used by ChatView to post the result back into the conversation.
+    var onMinted: ((String, String, String, String?) -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -204,6 +218,7 @@ struct MintNFTFormView: View {
     @State private var symbol: String = ""
     @State private var nftDescription: String = ""
     @State private var imageUrl: String = ""
+    @State private var externalUrl: String = ""
     @State private var traitsText: String = ""   // "Color=Blue, Rarity=Rare"
 
     @State private var isMinting = false
@@ -251,10 +266,17 @@ struct MintNFTFormView: View {
                             }
                         }
                     }
+                    TextField("External Link (https://…)", text: $externalUrl)
+                        .textContentType(.URL)
+#if os(iOS)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+#endif
                 } header: {
-                    Text("Artwork")
+                    Text("Artwork & Links")
                 } footer: {
-                    Text("Leave blank to use a SolMind placeholder image.")
+                    Text("Image URL: the NFT artwork. External Link: a website for the NFT (optional, e.g. your project page).")
                         .font(.caption2)
                 }
 
@@ -352,16 +374,19 @@ struct MintNFTFormView: View {
             }
 
         do {
-            _ = try await heliusService.mintCompressedNft(
+            let result = try await heliusService.mintCompressedNft(
                 name: nftName.trimmingCharacters(in: .whitespaces),
                 symbol: symbol.uppercased().trimmingCharacters(in: .whitespaces),
                 description: nftDescription.trimmingCharacters(in: .whitespaces),
                 owner: walletAddress,
                 imageUrl: imageUrl.trimmingCharacters(in: .whitespaces),
+                externalUrl: externalUrl.trimmingCharacters(in: .whitespaces),
                 attributes: attributes
             )
             isMinting = false
             ToastManager.shared.success("✓ NFT '\(nftName)' minted!")
+            let resolvedImageUrl = imageUrl.trimmingCharacters(in: .whitespaces)
+            onMinted?(nftName, symbol.uppercased(), result.assetId, resolvedImageUrl.isEmpty ? nil : resolvedImageUrl)
             onSuccess()
             dismiss()
         } catch {
