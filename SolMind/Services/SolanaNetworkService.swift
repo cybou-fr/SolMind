@@ -32,7 +32,8 @@ actor SolanaNetworkService {
 
     private var cachedStats: SolanaNetworkStats?
     private let cacheTTL: TimeInterval = 120  // 2 minutes
-    private let rpcURL = SolanaNetwork.rpcURL
+    // Computed so AppSettings key changes (e.g. after launch) are picked up on each fetch.
+    private var rpcURL: URL { SolanaNetwork.rpcURL }
     private var requestID = 0
 
     // MARK: - Public API
@@ -52,7 +53,7 @@ actor SolanaNetworkService {
         // Run both RPC calls concurrently
         async let epochData = postRPC(method: "getEpochInfo", params: [])
         async let perfData = postRPC(method: "getRecentPerformanceSamples",
-                                     params: [["limit": 1] as [String: Any]])
+                                     params: [1])
 
         guard let eData = try? await epochData else { return nil }
 

@@ -5,7 +5,7 @@ import Foundation
 
 struct MintNFTTool: Tool {
     let name = "mintNFT"
-    let description = "Mint a compressed NFT on devnet via Helius (free, Helius pays fee). Requires confirmation."
+    let description = "Mint a compressed NFT on devnet via Helius (free). Supports custom image URL and traits. Requires confirmation."
 
     private let walletManager: WalletManager
     private let heliusService: HeliusService
@@ -22,16 +22,16 @@ struct MintNFTTool: Tool {
         @Guide(description: "NFT display name")
         var name: String
 
-        @Guide(description: "Collection ticker symbol")
+        @Guide(description: "Collection symbol e.g. COOL")
         var symbol: String
 
-        @Guide(description: "NFT description text")
+        @Guide(description: "Short NFT description")
         var description: String
 
-        @Guide(description: "Image URL (empty for default)")
+        @Guide(description: "Public image URL; leave empty for default")
         var imageUrl: String?
 
-        @Guide(description: "Traits as Key=Value strings")
+        @Guide(description: "Traits as 'Type=Value' e.g. ['Color=Blue','Rarity=Rare']")
         var traits: [String]?
     }
 

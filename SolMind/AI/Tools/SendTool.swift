@@ -88,7 +88,7 @@ struct SendTool: Tool {
             return "✅ DEVNET: Transaction sent! \(amount) SOL → \(recipient). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Send failed: \(error.localizedDescription)") }
-            return "Transaction failed: \(error.localizedDescription)"
+            return "⚠️ TERMINAL: SOL transfer failed — \(error.localizedDescription). Do NOT retry automatically."
         }
     }
 
@@ -155,7 +155,7 @@ struct SendTool: Tool {
             return "✅ DEVNET: Token transfer sent! \(amount) tokens → \(recipient). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Transfer failed: \(error.localizedDescription)") }
-            return "SPL transfer failed: \(error.localizedDescription)"
+            return "⚠️ TERMINAL: SPL transfer failed — \(error.localizedDescription). Do NOT retry automatically."
         }
     }
 }

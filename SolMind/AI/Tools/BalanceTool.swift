@@ -21,6 +21,18 @@ struct BalanceTool: Tool {
         var tokenMint: String?
     }
 
+    // MARK: - Known token symbols (devnet + mainnet mints)
+    private static let knownMints: [String: String] = [
+        "So11111111111111111111111111111111111111112": "SOL",
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+        "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": "USDT",
+        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": "USDC(dev)"
+    ]
+
+    private func knownSymbol(for mint: String) -> String {
+        Self.knownMints[mint] ?? "\(mint.prefix(6))…"
+    }
+
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
@@ -43,7 +55,11 @@ struct BalanceTool: Tool {
                     result += " | EMPTY WALLET: Call getFromFaucet tool now to fund this wallet with devnet SOL."
                 }
                 if !tokenAccounts.isEmpty {
-                    let tokenSummary = tokenAccounts.map { "\($0.mint): \($0.displayAmount)" }.joined(separator: ", ")
+                    // Show symbol (or abbreviated mint) + amount — avoid raw 44-char mints to save context tokens
+                    let tokenSummary = tokenAccounts.map { acct -> String in
+                        let sym = knownSymbol(for: acct.mint)
+                        return "\(sym): \(acct.displayAmount)"
+                    }.joined(separator: ", ")
                     result += " | SPL tokens: \(tokenSummary)"
                 }
                 return result

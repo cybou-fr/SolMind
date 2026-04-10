@@ -134,11 +134,12 @@ struct TransactionBuilder {
         createAccountData.append(contentsOf: tokenProgramID)
 
         // Token Program InitializeMint2 (discriminator 20) — no rent sysvar required
-        // Data: [20, decimals, mintAuthority (32), COption::Some (1), freezeAuthority (32)]
+        // Data: [20, decimals, mintAuthority (32), COption::Some (4 bytes u32 LE), freezeAuthority (32)]
+        // COption<Pubkey> is Borsh-encoded: None = [0,0,0,0]  Some = [1,0,0,0] + 32 bytes
         var initMintData = Data([20, decimals])
-        initMintData.append(contentsOf: payerBytes)  // mint authority = payer
-        initMintData.append(1)                        // Some(freezeAuthority)
-        initMintData.append(contentsOf: payerBytes)  // freeze authority = payer
+        initMintData.append(contentsOf: payerBytes)          // mint authority = payer
+        initMintData.append(contentsOf: [1, 0, 0, 0])       // COption::Some (u32 LE = 4 bytes)
+        initMintData.append(contentsOf: payerBytes)          // freeze authority = payer
 
         let message = buildMessage(
             accounts: accounts,

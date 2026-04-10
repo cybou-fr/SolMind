@@ -868,9 +868,10 @@ struct KnownMintSymbolTests {
         #expect(unique.count == symbols.count, "Duplicate symbols in known mint list")
     }
 
-    @Test func solMintAddressIs44Chars() {
+    @Test func solMintAddressIs43Chars() {
+        // Wrapped SOL mint is 43 chars (decodes to 32 bytes — valid pubkey)
         let solMint = "So11111111111111111111111111111111111111112"
-        #expect(solMint.count == 44)
+        #expect(solMint.count == 43)
     }
 
     @Test func usdcMainnetMintIs44Chars() {

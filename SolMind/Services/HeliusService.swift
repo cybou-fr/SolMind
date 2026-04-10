@@ -132,7 +132,6 @@ class HeliusService {
                 "description": description,
                 "attributes": attributeObjects,
                 "imageUrl": imageUrl.isEmpty ? "https://placehold.co/400x400/6C5CE7/FFFFFF?text=SolMind" : imageUrl,
-                //\(symbol.uppercased())" : imageUrl,
                 "externalUrl": "https://solmind.app",
                 "sellerFeeBasisPoints": 0
             ]

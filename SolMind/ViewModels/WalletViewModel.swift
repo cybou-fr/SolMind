@@ -161,11 +161,22 @@ class WalletViewModel {
     func requestAirdrop(solAmount: Double = 1.0) async throws -> String {
         guard let pk = walletManager.publicKey else { throw WalletError.notConnected }
         let lamports = UInt64(min(solAmount, 2.0) * 1_000_000_000)
-        let signature = try await solanaClient.requestAirdrop(to: pk, lamports: lamports)
-        // Refresh balance after short delay
-        try await Task.sleep(nanoseconds: 3_000_000_000)
-        await refreshBalance()
-        return signature
+
+        // Try three distinct providers — same order as FaucetTool.
+        let endpoints: [URL] = [
+            URL(string: "https://api.devnet.solana.com")!,
+            URL(string: "https://devnet.helius-rpc.com/?api-key=\(AppSettings.shared.effectiveHeliusAPIKey)")!,
+            URL(string: "https://rpc.ankr.com/solana_devnet")!
+        ]
+        for url in endpoints {
+            let client = SolanaClient(rpcURL: url)
+            if let sig = try? await client.requestAirdrop(to: pk, lamports: lamports) {
+                try await Task.sleep(nanoseconds: 3_000_000_000)
+                await refreshBalance()
+                return sig
+            }
+        }
+        throw RPCError(code: -1, message: "All devnet faucet providers are rate-limited. Try again later or visit faucet.solana.com.")
     }
 
     // MARK: - Known Token Metadata (devnet)

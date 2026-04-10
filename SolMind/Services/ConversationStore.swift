@@ -9,7 +9,8 @@ final class ConversationStore {
 
     init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        directory = appSupport.appending(path: "fr.cybou.SolMind/conversations", directoryHint: .isDirectory)
+        let bundleID = Bundle.main.bundleIdentifier ?? "SolMind"
+        directory = appSupport.appending(path: "\(bundleID)/conversations", directoryHint: .isDirectory)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 

@@ -30,7 +30,7 @@ class SolanaStatsViewModel {
         defer { isRefreshing = false }
 
         async let statsFetch = networkService.getNetworkStats()
-        async let priceFetch: Double? = (try? await priceService.getPrice(symbol: "SOL")) ?? nil
+        async let priceFetch = try? await priceService.getPrice(symbol: "SOL")
 
         networkStats = await statsFetch
         solPrice = await priceFetch

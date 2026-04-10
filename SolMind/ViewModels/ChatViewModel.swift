@@ -107,7 +107,8 @@ class ChatViewModel {
         isProcessing = true
         currentSuggestions = []
         sessionMessageCount += 1
-        // Reset confirmation lockout so the first tool call in this message can always show a card.
+        // Reset lockout + dismiss any stale confirmation card before starting a new turn.
+        confirmationHandlerRef?.clearPending()
         confirmationHandlerRef?.resetLockout()
 
         let assistantMsg = ChatMessage(role: .assistant, content: "", timestamp: Date(), isStreaming: true)
@@ -273,15 +274,15 @@ class ChatViewModel {
     private func isContextWindowError(_ error: Error) -> Bool {
         if case AIError.contextWindowExceeded = error { return true }
         let text = error.localizedDescription.lowercased()
-        // Apple FoundationModels error text: "Context length of 4096 was exceeded during singleExtend."
+        // Apple FoundationModels-specific overflow patterns.
+        // NOTE: Do NOT check for bare "exceeded" — it also matches Solana "Rate limit exceeded"
+        //       which would wrongly reset the AI session on an RPC error.
         return text.contains("4096")
             || text.contains("context length")
             || text.contains("context window")
-            || text.contains("exceeded")
             || text.contains("singleextend")
             || text.contains("inferencefailed")
             || text.contains("generationerror")
-            || text.contains("error -1")
     }
 
     private func collectStream(_ prompt: String) async throws -> String {

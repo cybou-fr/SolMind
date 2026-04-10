@@ -99,7 +99,7 @@ struct SwapTool: Tool {
             return "✅ DEVNET: Swap executed! TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Swap failed: \(error.localizedDescription)") }
-            return "Swap execution failed: \(error.localizedDescription)"
+            return "⚠️ TERMINAL: Swap execution failed — \(error.localizedDescription). Do NOT retry automatically."
         }
     }
 }
