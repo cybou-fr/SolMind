@@ -8,6 +8,8 @@ struct ChatView: View {
     @Environment(TransactionConfirmationHandler.self) private var confirmationHandler
     @Environment(SolanaStatsViewModel.self) private var statsVM
 
+    @State private var showExportSheet = false
+
     var body: some View {
         @Bindable var vm = chatViewModel
 
@@ -124,10 +126,25 @@ struct ChatView: View {
             // Conversation export
             ToolbarItem(placement: .automatic) {
                 if let convo = chatViewModel.activeConversation, !convo.messages.isEmpty {
-                    ShareLink(item: exportConversation(convo)) {
+                    Menu {
+                        ShareLink(
+                            item: exportText(convo),
+                            preview: SharePreview(convo.title, image: Image(systemName: "text.document"))
+                        ) {
+                            Label("Export as Text", systemImage: "doc.text")
+                        }
+                        Button {
+                            showExportSheet = true
+                        } label: {
+                            Label("Export as PDF", systemImage: "doc.richtext")
+                        }
+                    } label: {
                         Image(systemName: "square.and.arrow.up")
                     }
                     .help("Export conversation")
+                    .sheet(isPresented: $showExportSheet) {
+                        ExportPDFSheet(conversation: convo)
+                    }
                 }
             }
             ToolbarItem(placement: .automatic) {
@@ -322,11 +339,9 @@ struct ChatView: View {
                 .padding(.vertical, 8)
                 .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 20))
                 .onSubmit {
-#if os(macOS)
-                    // ⌘Enter sends on macOS
-#else
+                    // Enter sends on all platforms.
+                    // On macOS, Shift+Enter / Option+Enter inserts a newline (system default for axis: .vertical).
                     Task { await vm.sendMessage() }
-#endif
                 }
 
             Button {
@@ -338,7 +353,6 @@ struct ChatView: View {
             }
             .disabled(vm.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.isProcessing)
             .accessibilityLabel(vm.isProcessing ? "Sending message" : "Send message")
-            .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -398,20 +412,193 @@ struct ChatView: View {
 
     // MARK: - Conversation Export
 
-    private func exportConversation(_ convo: Conversation) -> String {
-        var lines = ["# \(convo.title)", "Exported from SolMind (Devnet)", ""]
+    private func exportText(_ convo: Conversation) -> String {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        var lines = [
+            convo.title,
+            "Exported from SolMind — Solana Devnet Wallet",
+            "Date: \(df.string(from: convo.createdAt))",
+            String(repeating: "-", count: 60),
+            ""
+        ]
         for msg in convo.messages where !msg.isStreaming {
             let role: String
             switch msg.role {
             case .user: role = "You"
             default:    role = "SolMind"
             }
-            lines.append("**\(role):** \(msg.content)")
+            lines.append("[\(df.string(from: msg.timestamp))] \(role):")
+            lines.append(msg.content)
             lines.append("")
         }
         return lines.joined(separator: "\n")
     }
+
+    // Legacy alias kept for any remaining call sites
+    private func exportConversation(_ convo: Conversation) -> String { exportText(convo) }
 }
+
+// MARK: - PDF Export Sheet
+
+import PDFKit
+
+struct ExportPDFSheet: View {
+    let conversation: Conversation
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var pdfURL: URL?
+    @State private var isGenerating = true
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isGenerating {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                        Text("Generating PDF…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let url = pdfURL {
+                    PDFPreviewView(url: url)
+                } else {
+                    ContentUnavailableView("PDF generation failed", systemImage: "exclamationmark.triangle")
+                }
+            }
+            .navigationTitle("Export PDF")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+                if let url = pdfURL {
+                    ToolbarItem(placement: .confirmationAction) {
+                        ShareLink(
+                            item: url,
+                            preview: SharePreview(
+                                conversation.title,
+                                image: Image(systemName: "doc.richtext")
+                            )
+                        ) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                        }
+                        .bold()
+                    }
+                }
+            }
+        }
+        .task {
+            pdfURL = await Task.detached(priority: .userInitiated) {
+                ExportPDFSheet.renderPDF(conversation: conversation)
+            }.value
+            isGenerating = false
+        }
+    }
+
+    // MARK: - PDF Rendering (CoreText + CoreGraphics — all platforms)
+
+    private static func renderPDF(conversation: Conversation) -> URL? {
+        let df = DateFormatter(); df.dateStyle = .medium; df.timeStyle = .short
+        let pw: CGFloat = 595.28, ph: CGFloat = 841.89
+        var mediaBox = CGRect(x: 0, y: 0, width: pw, height: ph)
+        let margin: CGFloat = 50
+
+        let url = tempURL(for: conversation.title)
+        guard let ctx = CGContext(url as CFURL, mediaBox: &mediaBox, [
+            kCGPDFContextCreator: "SolMind",
+            kCGPDFContextTitle: conversation.title
+        ] as CFDictionary) else { return nil }
+
+        let ctFontKey  = NSAttributedString.Key(kCTFontAttributeName  as String)
+        let ctColorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
+
+        func attrs(name: String, size: CGFloat, color: CGColor) -> [NSAttributedString.Key: Any] {
+            [ctFontKey: CTFontCreateWithName(name as CFString, size, nil), ctColorKey: color]
+        }
+
+        let black = CGColor(gray: 0,   alpha: 1)
+        let gray  = CGColor(gray: 0.5, alpha: 1)
+        let blue  = CGColor(red: 0.2,  green: 0.4,  blue: 0.9,  alpha: 1)
+        let green = CGColor(red: 0.1,  green: 0.55, blue: 0.25, alpha: 1)
+
+        let full = NSMutableAttributedString()
+        full.append(NSAttributedString(
+            string: conversation.title + "\n",
+            attributes: attrs(name: "Helvetica-Bold", size: 18, color: black)))
+        full.append(NSAttributedString(
+            string: "SolMind \u{2014} Solana Devnet  \u{00B7}  \(df.string(from: conversation.createdAt))\n\n",
+            attributes: attrs(name: "Helvetica", size: 9, color: gray)))
+
+        for msg in conversation.messages where !msg.isStreaming {
+            let isUser: Bool
+            switch msg.role { case .user: isUser = true; default: isUser = false }
+            let label = isUser ? "You" : "SolMind"
+            let lc = isUser ? blue : green
+            full.append(NSAttributedString(
+                string: "\(label)  \u{00B7}  \(df.string(from: msg.timestamp))\n",
+                attributes: attrs(name: "Helvetica-Bold", size: 10, color: lc)))
+            let clean = msg.content
+                .replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: "# ", with: "")
+            full.append(NSAttributedString(
+                string: clean + "\n\n",
+                attributes: attrs(name: "Helvetica", size: 11, color: black)))
+        }
+
+        let setter = CTFramesetterCreateWithAttributedString(full)
+        let contentRect = CGRect(x: margin, y: margin,
+                                 width: pw - margin * 2, height: ph - margin * 2)
+        var charIndex = 0
+        let totalChars = full.length
+
+        while charIndex < totalChars {
+            ctx.beginPDFPage(nil)
+            let framePath = CGPath(rect: contentRect, transform: nil)
+            let frame = CTFramesetterCreateFrame(
+                setter, CFRange(location: charIndex, length: 0), framePath, nil)
+            CTFrameDraw(frame, ctx)
+            let visible = CTFrameGetVisibleStringRange(frame)
+            ctx.endPDFPage()
+            if visible.length == 0 { break }
+            charIndex += visible.length
+        }
+
+        ctx.closePDF()
+        return url
+    }
+
+    private static func tempURL(for title: String) -> URL {
+        let safe = title.components(separatedBy: .punctuationCharacters).joined()
+            .components(separatedBy: .whitespaces).joined(separator: "_")
+        let name = String(safe.prefix(40)) + "-\(Int(Date().timeIntervalSince1970)).pdf"
+        return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    }
+}
+
+// MARK: - PDF Preview (cross-platform)
+
+#if os(macOS)
+struct PDFPreviewView: NSViewRepresentable {
+    let url: URL
+    func makeNSView(context: Context) -> PDFView {
+        let v = PDFView(); v.autoScales = true; v.document = PDFDocument(url: url); return v
+    }
+    func updateNSView(_ nsView: PDFView, context: Context) {}
+}
+#else
+struct PDFPreviewView: UIViewRepresentable {
+    let url: URL
+    func makeUIView(context: Context) -> PDFView {
+        let v = PDFView(); v.autoScales = true; v.document = PDFDocument(url: url); return v
+    }
+    func updateUIView(_ v: PDFView, context: Context) {}
+}
+#endif
 
 // MARK: - Simple Flow Layout (kept for empty state chips fallback)
 
