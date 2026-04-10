@@ -92,7 +92,6 @@ struct AIInstructionsTests {
             statsContext: "",
             userMessage: "test"
         )
-        // Only first 4 tokens should appear
         #expect(result.contains("TK1"))
         #expect(result.contains("TK4"))
         #expect(!result.contains("TK5"))
@@ -221,7 +220,6 @@ struct SuggestionEngineTests {
     }
 
     @Test func suggestionsAreNeverEmpty() {
-        // For any input, suggestions should always return at least one entry
         let contexts: [(String, String, Bool)] = [
             ("", "", true),
             ("error", "send", false),
@@ -254,7 +252,6 @@ struct SuggestionEngineTests {
 struct Base58Tests {
 
     @Test func knownZeroAddress() {
-        // 32 zero bytes → SystemProgram address "11111111111111111111111111111111"
         let zeros = Array(repeating: UInt8(0), count: 32)
         let encoded = Base58.encode(zeros)
         #expect(encoded == "11111111111111111111111111111111")
@@ -273,11 +270,8 @@ struct Base58Tests {
     }
 
     @Test func validAddressDetection() {
-        // A known valid devnet address
         #expect(Base58.isValidAddress("11111111111111111111111111111111") == true)
-        // Too short
         #expect(Base58.isValidAddress("abc") == false)
-        // Invalid character (0, O, I, l are excluded from Base58 alphabet)
         #expect(Base58.isValidAddress("0InvalidCharacter") == false)
     }
 
@@ -286,19 +280,16 @@ struct Base58Tests {
     }
 
     @Test func leadingZeroBytesPreservedAsOnes() {
-        // Leading zero bytes encode as leading '1' characters in Base58
         let twoZerosThenOne: [UInt8] = [0, 0, 1]
         let encoded = Base58.encode(twoZerosThenOne)
         #expect(encoded.hasPrefix("11"))
     }
 
     @Test func knownTokenProgramAddress() {
-        // Token Program address should decode to exactly 32 bytes
         let tokenProgram = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         let decoded = Base58.decode(tokenProgram)
         #expect(decoded != nil)
         #expect(decoded?.count == 32)
-        // Re-encoding should produce the same string
         if let bytes = decoded {
             #expect(Base58.encode(bytes) == tokenProgram)
         }
@@ -306,13 +297,11 @@ struct Base58Tests {
 
     @Test func decodeEmptyStringReturnsEmpty() {
         let decoded = Base58.decode("")
-        // Empty string should decode to empty array, not nil
         #expect(decoded != nil)
         #expect(decoded?.isEmpty == true)
     }
 
     @Test func singleMaxByteRoundTrip() {
-        // Single byte [255] should encode and round-trip cleanly
         let input: [UInt8] = [255]
         let encoded = Base58.encode(input)
         let decoded = Base58.decode(encoded)
@@ -320,9 +309,7 @@ struct Base58Tests {
     }
 
     @Test func isValidAddressRequires32Bytes() {
-        // Token Program is valid (32 bytes)
         #expect(Base58.isValidAddress("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") == true)
-        // ATA Program is valid (32 bytes)
         #expect(Base58.isValidAddress("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bQ") == true)
     }
 }
@@ -341,22 +328,18 @@ struct CompactU16Tests {
     }
 
     @Test func twoBytesBoundary() {
-        // 128 = 0x80 → [0x80, 0x01]
         #expect(TransactionBuilder.encodeCompactU16(128) == [0x80, 0x01])
     }
 
     @Test func twoBytesMid() {
-        // 256 = 0x100 → low 7 bits = 0, high = 2 → [0x80, 0x02]
         #expect(TransactionBuilder.encodeCompactU16(256) == [0x80, 0x02])
     }
 
     @Test func twoBytes255() {
-        // 255 = 0xFF → low 7 bits = 0x7F with continuation, high = 1 → [0xFF, 0x01]
         #expect(TransactionBuilder.encodeCompactU16(255) == [0xFF, 0x01])
     }
 
     @Test func compactU16Is1ByteForSmallAccounts() {
-        // Account counts up to 127 should always encode as 1 byte
         for n in UInt16(0)...UInt16(127) {
             let encoded = TransactionBuilder.encodeCompactU16(n)
             #expect(encoded.count == 1)
@@ -371,7 +354,6 @@ struct TransactionBuilderTests {
 
     @Test func solTransferLength() throws {
         let sender = Keypair.generate()
-        // Use a valid devnet-style recipient (SystemProgram address as stand-in)
         let recipient = "11111111111111111111111111111111"
         let blockhash = "11111111111111111111111111111111"
 
@@ -382,39 +364,21 @@ struct TransactionBuilderTests {
             recentBlockhash: blockhash
         )
 
-        // Expected layout:
-        //  1  byte  compact-u16 sig count (= 1)
-        // 64  bytes signature
-        //  3  bytes message header
-        //  1  byte  compact-u16 account count (= 3)
-        // 96  bytes 3 × 32-byte account keys
-        // 32  bytes recent blockhash
-        //  1  byte  compact-u16 instruction count (= 1)
-        //  1  byte  program id index
-        //  1  byte  compact-u16 account indices count (= 2)
-        //  2  bytes account indices [0, 1]
-        //  1  byte  compact-u16 data length (= 12)
-        // 12  bytes instruction data (4-byte discriminator + 8-byte lamports)
-        // Total = 1 + 64 + 3 + 1 + 96 + 32 + 1 + 1 + 1 + 2 + 1 + 12 = 215
+        // 1 sig count + 64 sig + 3 header + 1 acc count + 96 accounts
+        // + 32 blockhash + 1 ix count + 1 prog idx + 1 acct count
+        // + 2 acct indices + 1 data len + 12 data = 215
         #expect(tx.count == 215)
     }
 
     @Test func solTransferSignatureBytes() throws {
         let sender = Keypair.generate()
-        let recipient = "11111111111111111111111111111111"
-        let blockhash = "11111111111111111111111111111111"
-
         let tx = try TransactionBuilder.buildSOLTransfer(
             from: sender,
-            to: recipient,
+            to: "11111111111111111111111111111111",
             lamports: 500_000,
-            recentBlockhash: blockhash
+            recentBlockhash: "11111111111111111111111111111111"
         )
-
-        // First byte is compact-u16 count = 1
         #expect(tx[0] == 1)
-        // Bytes 1-64 are the 64-byte Ed25519 signature
-        // Verify the signature is non-zero (not a degenerate case)
         let sigBytes = tx[1..<65]
         #expect(sigBytes.contains(where: { $0 != 0 }))
     }
@@ -452,7 +416,6 @@ struct TransactionBuilderTests {
         let tx1 = try TransactionBuilder.buildSOLTransfer(from: sender1, to: recipient, lamports: 100, recentBlockhash: blockhash)
         let tx2 = try TransactionBuilder.buildSOLTransfer(from: sender2, to: recipient, lamports: 100, recentBlockhash: blockhash)
 
-        // Signatures (bytes 1-64) must differ
         #expect(tx1[1..<65] != tx2[1..<65])
     }
 }
@@ -463,24 +426,17 @@ struct TransactionBuilderTests {
 struct SPLTransactionTests {
 
     private let blockhash = "11111111111111111111111111111111"
-    // Devnet USDC mint as a stand-in valid mint address
     private let devnetUSDC = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
 
     @Test func splTransferLength() throws {
         let sender = Keypair.generate()
-        let recipient = "11111111111111111111111111111111"
-
         let tx = try TransactionBuilder.buildSPLTransfer(
             from: sender,
-            to: recipient,
+            to: "11111111111111111111111111111111",
             mintBase58: devnetUSDC,
             amount: 1_000_000,
             recentBlockhash: blockhash
         )
-
-        // Layout: 1 sig count + 64 sig + 318 message = 383
-        // Message: 3 header + 1 acc count + 256 (8×32) + 32 blockhash
-        //         + 1 ix count + 10 (createATA ix) + 15 (transfer ix) = 318
         #expect(tx.count == 383)
     }
 
@@ -520,7 +476,6 @@ struct SPLTransactionTests {
                 recentBlockhash: blockhash
             )
         } throws: { error in
-            // Should be a buildFailed error for invalid mint
             (error as? TransactionError) != nil
         }
     }
@@ -528,7 +483,6 @@ struct SPLTransactionTests {
     @Test func createMintLength() throws {
         let payer = Keypair.generate()
         let mintKeypair = Keypair.generate()
-
         let tx = try TransactionBuilder.buildCreateMint(
             payer: payer,
             mintKeypair: mintKeypair,
@@ -536,50 +490,426 @@ struct SPLTransactionTests {
             recentBlockhash: blockhash
         )
 
-        // Layout: 1 sig count + 64 payer sig + 64 mint sig + 293 message = 422
+        // Layout: 1 sig count + 64 payer sig + 64 mint sig + 296 message = 425
         // Message: 3 header + 1 acc count + 128 (4×32) + 32 blockhash
-        //         + 1 ix count + 57 (createAccount ix) + 71 (initMint2 ix) = 293
-        #expect(tx.count == 422)
+        //         + 1 ix count + 57 (createAccount) + 74 (initMint2) = 296
+        //
+        // initMint2 data = 70 bytes:
+        //   1 discriminator(20) + 1 decimals + 32 mintAuth
+        //   + 4 COption::Some([1,0,0,0]) + 32 freezeAuth
+        //   COption uses u32 LE discriminant — NOT 1-byte u8!
+        #expect(tx.count == 425)
     }
 
     @Test func createMintHasTwoSignatures() throws {
         let payer = Keypair.generate()
         let mintKeypair = Keypair.generate()
-
         let tx = try TransactionBuilder.buildCreateMint(
             payer: payer,
             mintKeypair: mintKeypair,
             decimals: 9,
             recentBlockhash: blockhash
         )
-
-        // First byte is compact-u16 encoding of sig count = 2
         #expect(tx[0] == 2)
-        // Two distinct 64-byte signatures follow
         let sig1 = tx[1..<65]
         let sig2 = tx[65..<129]
         #expect(sig1.contains(where: { $0 != 0 }))
         #expect(sig2.contains(where: { $0 != 0 }))
-        // The two signatures must differ (different signers)
         #expect(sig1 != sig2)
     }
 
     @Test func mintTokensLength() throws {
         let payer = Keypair.generate()
-        // Use ataProgramID bytes as a mock mint (known valid 32-byte address)
         let mint = TransactionBuilder.ataProgramID
-
         let tx = try TransactionBuilder.buildMintTokens(
             payer: payer,
             mint: mint,
             amount: 1_000_000,
             recentBlockhash: blockhash
         )
-
-        // Layout: 1 sig count + 64 sig + 254 message = 319
-        // Message: 3 header + 1 acc count + 192 (6×32) + 32 blockhash
-        //         + 1 ix count + 10 (createATA ix) + 15 (mintTo ix) = 254
+        // 1 sig count + 64 sig + 254 message = 319
         #expect(tx.count == 319)
+    }
+}
+
+// MARK: - InitializeMint2 Byte Content Tests
+//
+// These tests verify the exact binary encoding of the InitializeMint2 instruction.
+// The critical invariant: freeze_authority uses COption<Pubkey> with a 4-byte
+// u32 LE discriminant ([1,0,0,0] for Some), NOT a 1-byte u8 discriminant.
+// Wrong encoding → Token Program silently rejects every createToken call.
+//
+// Transaction layout for buildCreateMint (425 bytes total):
+//  [0]        compact-u16 sig count = 2
+//  [1..64]    payer Ed25519 signature
+//  [65..128]  mint Ed25519 signature
+//  [129..131] message header
+//  [132]      account count = 4
+//  [133..164] payer pubkey
+//  [165..196] mint pubkey
+//  [197..228] systemProgramID
+//  [229..260] tokenProgramID
+//  [261..292] blockhash
+//  [293]      instruction count = 2
+//  IX0 createAccount [294..350]:
+//    [294] programIdIndex=2, [295] acctCount=2, [296-297] [0,1]
+//    [298] dataLen=52, [299..350] data
+//  IX1 InitializeMint2 [351..424]:
+//    [351] programIdIndex=3
+//    [352] acctCount=1, [353] acctIdx=1
+//    [354] dataLen=70
+//    [355] discriminator=20
+//    [356] decimals
+//    [357..388] mintAuthority (32 bytes)
+//    [389..392] COption::Some = [1,0,0,0]  ← u32 LE, NOT u8
+//    [393..424] freezeAuthority (32 bytes)
+
+@Suite("InitializeMint2 Instruction Byte Content")
+struct InitializeMint2ByteContentTests {
+
+    private let blockhash = "11111111111111111111111111111111"
+
+    @Test func initMint2DiscriminatorIs20() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        // InitializeMint2 discriminator = 20 (not InitializeMint which is 0)
+        #expect(tx[355] == 20)
+    }
+
+    @Test func initMint2DecimalsEncodedCorrectly() throws {
+        for decimals in [UInt8(0), 6, 9] {
+            let payer = Keypair.generate()
+            let mintKeypair = Keypair.generate()
+            let tx = try TransactionBuilder.buildCreateMint(
+                payer: payer, mintKeypair: mintKeypair,
+                decimals: decimals, recentBlockhash: blockhash
+            )
+            #expect(tx[356] == decimals, "Decimals byte mismatch for \(decimals)")
+        }
+    }
+
+    @Test func initMint2COptionUsesFourByteU32Discriminant() throws {
+        // This is the critical test that would have caught the COption bug.
+        // Before the fix: code did `initMintData.append(1)` — 1 byte, wrong.
+        // After the fix: code does `append(contentsOf: [1, 0, 0, 0])` — u32 LE, correct.
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        let coptionBytes = [tx[389], tx[390], tx[391], tx[392]]
+        #expect(coptionBytes == [1, 0, 0, 0],
+            "COption::Some must be [1,0,0,0] (u32 LE), got \(coptionBytes)")
+    }
+
+    @Test func initMint2FreezeAuthorityMatchesMintAuthority() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        let mintAuth = Array(tx[357..<389])
+        let freezeAuth = Array(tx[393..<425])
+        let payerBytes = payer.publicKeyBytes
+        #expect(mintAuth == payerBytes, "mintAuthority should equal payer pubkey")
+        #expect(freezeAuth == payerBytes, "freezeAuthority should equal payer pubkey")
+        #expect(mintAuth == freezeAuth)
+    }
+
+    @Test func initMint2MintAuthorityIsNonZero() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        let mintAuthBytes = Array(tx[357..<389])
+        #expect(mintAuthBytes.count == 32)
+        #expect(mintAuthBytes.contains(where: { $0 != 0 }))
+    }
+
+    @Test func initMint2ProgramIdIndexPointsToTokenProgram() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        // Account table: [0]=payer, [1]=mint, [2]=systemProgram, [3]=tokenProgram
+        #expect(tx[351] == 3)
+    }
+
+    @Test func initMint2AccountIndexPointsToMint() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        #expect(tx[352] == 1)  // account count = 1
+        #expect(tx[353] == 1)  // account index = 1 (mint)
+    }
+
+    @Test func initMint2DataLengthIs70() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        // data = 1 discriminator + 1 decimals + 32 mintAuth + 4 COption + 32 freezeAuth = 70
+        #expect(tx[354] == 70)
+    }
+
+    @Test func initMint2TotalTransactionIs425Bytes() throws {
+        let payer = Keypair.generate()
+        let mintKeypair = Keypair.generate()
+        let tx = try TransactionBuilder.buildCreateMint(
+            payer: payer, mintKeypair: mintKeypair,
+            decimals: 6, recentBlockhash: blockhash
+        )
+        #expect(tx.count == 425)
+    }
+}
+
+// MARK: - MintTo Instruction Content Tests
+
+@Suite("MintTo Instruction Content")
+struct MintToInstructionContentTests {
+
+    private let blockhash = "11111111111111111111111111111111"
+
+    @Test func mintToSigCountIsOne() throws {
+        let payer = Keypair.generate()
+        let mint = TransactionBuilder.ataProgramID
+        let tx = try TransactionBuilder.buildMintTokens(
+            payer: payer, mint: mint, amount: 1_000_000,
+            recentBlockhash: blockhash
+        )
+        #expect(tx[0] == 1)
+    }
+
+    @Test func mintToTotalLength() throws {
+        let payer = Keypair.generate()
+        let mint = TransactionBuilder.ataProgramID
+        let tx = try TransactionBuilder.buildMintTokens(
+            payer: payer, mint: mint, amount: 1_000_000,
+            recentBlockhash: blockhash
+        )
+        #expect(tx.count == 319)
+    }
+
+    @Test func mintToHasTwoInstructions() throws {
+        let payer = Keypair.generate()
+        let mint = TransactionBuilder.ataProgramID
+        let tx = try TransactionBuilder.buildMintTokens(
+            payer: payer, mint: mint, amount: 1_000_000,
+            recentBlockhash: blockhash
+        )
+        // Instruction count at byte 293 = 2 (createATA + mintTo)
+        #expect(tx[293] == 2)
+    }
+
+    @Test func mintToSignatureIsNonZero() throws {
+        let payer = Keypair.generate()
+        let mint = TransactionBuilder.ataProgramID
+        let tx = try TransactionBuilder.buildMintTokens(
+            payer: payer, mint: mint, amount: 1_000_000,
+            recentBlockhash: blockhash
+        )
+        let sig = tx[1..<65]
+        #expect(sig.contains(where: { $0 != 0 }))
+    }
+}
+
+// MARK: - TokenBalance Model Tests
+
+@Suite("TokenBalance Model")
+struct TokenBalanceModelTests {
+
+    @Test func uiAmountWithSixDecimals() {
+        // 1_000_000 raw / 10^6 = 1.0 USDC
+        let tb = TokenBalance(
+            mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 1_000_000, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 1.0) < 1e-9)
+    }
+
+    @Test func uiAmountWithNineDecimals() {
+        // 1_000_000_000 raw / 10^9 = 1.0 SOL
+        let tb = TokenBalance(
+            mint: "So11111111111111111111111111111111111111112",
+            symbol: "SOL", name: "Solana",
+            decimals: 9, rawAmount: 1_000_000_000, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 1.0) < 1e-9)
+    }
+
+    @Test func uiAmountWithZeroDecimals() {
+        // Whole-unit token (e.g. NFT with 0 decimals)
+        let tb = TokenBalance(
+            mint: "SomeMint111111111111111111111111111111111111",
+            symbol: "NFT", name: "My NFT",
+            decimals: 0, rawAmount: 5, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 5.0) < 1e-9)
+    }
+
+    @Test func uiAmountFractionalAmount() {
+        // 500_000 raw / 10^6 = 0.5 USDC
+        let tb = TokenBalance(
+            mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 500_000, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 0.5) < 1e-9)
+    }
+
+    @Test func uiAmountLargeRawAmount() {
+        // 1_000_000_000_000 raw / 10^6 = 1_000_000.0 USDC
+        let tb = TokenBalance(
+            mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 1_000_000_000_000, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 1_000_000.0) < 1e-3)
+    }
+
+    @Test func uiAmountZeroRawAmount() {
+        let tb = TokenBalance(
+            mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 0, usdValue: nil
+        )
+        #expect(tb.uiAmount == 0.0)
+    }
+
+    @Test func uiAmountHalfSol() {
+        // 500_000_000 lamports / 10^9 = 0.5 SOL
+        let tb = TokenBalance(
+            mint: "So11111111111111111111111111111111111111112",
+            symbol: "SOL", name: "Solana",
+            decimals: 9, rawAmount: 500_000_000, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - 0.5) < 1e-9)
+    }
+
+    @Test func usdValuePassthrough() {
+        let tb = TokenBalance(
+            mint: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 100_000_000, usdValue: 100.0
+        )
+        #expect(tb.usdValue == 100.0)
+    }
+
+    @Test func nilUsdValueRemainsNil() {
+        let tb = TokenBalance(
+            mint: "SomeUnknownMint111111111111111111111111111111",
+            symbol: "UNK", name: "Unknown",
+            decimals: 3, rawAmount: 1_000, usdValue: nil
+        )
+        #expect(tb.usdValue == nil)
+    }
+
+    @Test func uiAmountComputationIsCorrectFormula() {
+        // Explicit formula check: uiAmount = Double(rawAmount) / pow(10, decimals)
+        let rawAmount: UInt64 = 123_456
+        let decimals = 3
+        let expected = Double(rawAmount) / pow(10.0, Double(decimals))  // 123.456
+        let tb = TokenBalance(
+            mint: "SomeMint111111111111111111111111111111111111",
+            symbol: "TST", name: "Test Token",
+            decimals: decimals, rawAmount: rawAmount, usdValue: nil
+        )
+        #expect(abs(tb.uiAmount - expected) < 1e-9)
+    }
+}
+
+// MARK: - Known Mint Symbol Tests
+
+@Suite("Known Mint Symbol Lookup")
+struct KnownMintSymbolTests {
+
+    // These are the 4 mints that BalanceTool.knownMints and WalletViewModel.knownTokens
+    // must recognise. Tests verify address validity and that symbols are stable.
+    private let knownMints: [(address: String, symbol: String)] = [
+        ("So11111111111111111111111111111111111111112", "SOL"),
+        ("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "USDC"),
+        ("Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USDT"),
+        ("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", "USDC(dev)"),
+    ]
+
+    @Test func allKnownMintsDecodeToValidPubkeys() {
+        for (address, symbol) in knownMints {
+            let decoded = Base58.decode(address)
+            #expect(decoded != nil, "\(symbol) mint address is not valid Base58")
+            #expect(decoded?.count == 32, "\(symbol) mint address does not decode to 32 bytes")
+        }
+    }
+
+    @Test func knownMintAddressesAreUnique() {
+        let addresses = knownMints.map { $0.address }
+        let unique = Set(addresses)
+        #expect(unique.count == addresses.count, "Duplicate mint addresses in known list")
+    }
+
+    @Test func knownMintSymbolsAreUnique() {
+        let symbols = knownMints.map { $0.symbol }
+        let unique = Set(symbols)
+        #expect(unique.count == symbols.count, "Duplicate symbols in known mint list")
+    }
+
+    @Test func solMintAddressIs44Chars() {
+        let solMint = "So11111111111111111111111111111111111111112"
+        #expect(solMint.count == 44)
+    }
+
+    @Test func usdcMainnetMintIs44Chars() {
+        let usdc = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        #expect(usdc.count == 44)
+    }
+
+    @Test func devnetUsdcMintIs44Chars() {
+        let devUsdc = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        #expect(devUsdc.count == 44)
+    }
+
+    @Test func unknownMintNotInKnownList() {
+        let unknown = "SomeFakeMintAddress1111111111111111111111111"
+        let isKnown = knownMints.contains { $0.address == unknown }
+        #expect(!isKnown)
+    }
+
+    @Test func tokenBalanceWithKnownUSDCMintHasCorrectValues() {
+        // USDC mainnet: 1_000_000 raw / 10^6 = 1.0 UI
+        let tb = TokenBalance(
+            mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            symbol: "USDC", name: "USD Coin",
+            decimals: 6, rawAmount: 1_000_000, usdValue: nil
+        )
+        #expect(tb.symbol == "USDC")
+        #expect(abs(tb.uiAmount - 1.0) < 1e-9)
+    }
+
+    @Test func tokenBalanceSymbolPreserved() {
+        // Symbol stored at init time is returned unchanged — no dynamic lookup needed
+        let tb = TokenBalance(
+            mint: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            symbol: "USDT", name: "Tether",
+            decimals: 6, rawAmount: 5_000_000, usdValue: 5.0
+        )
+        #expect(tb.symbol == "USDT")
+        #expect(abs(tb.uiAmount - 5.0) < 1e-9)
+        #expect(tb.usdValue == 5.0)
     }
 }
 
@@ -589,7 +919,6 @@ struct SPLTransactionTests {
 struct PDADerivationTests {
 
     @Test func pdaDerivationIsDeterministic() {
-        // Use ataProgramID as programId — a real 32-byte address that produces off-curve results
         let seeds: [[UInt8]] = [Array("solmind-test".utf8)]
         let programId = TransactionBuilder.ataProgramID
 
@@ -622,14 +951,12 @@ struct PDADerivationTests {
             programId: programId
         )
 
-        // Different seeds must produce different PDAs (both non-nil)
         #expect(result1 != nil)
         #expect(result2 != nil)
         #expect(result1?.0 != result2?.0)
     }
 
     @Test func ataDerivationIsNonNilAndIs32Bytes() {
-        // Use a real keypair's public key as owner with a stable mock mint
         let owner = Keypair.generate().publicKeyBytes
         let mint = Array(repeating: UInt8(5), count: 32)
 
@@ -650,11 +977,31 @@ struct PDADerivationTests {
     @Test func differentOwnersProduceDifferentATAs() {
         let owner1 = Keypair.generate().publicKeyBytes
         let owner2 = Keypair.generate().publicKeyBytes
-        // Use ataProgramID bytes as a stable mock mint
         let mint = TransactionBuilder.ataProgramID
 
         let ata1 = TransactionBuilder.associatedTokenAddress(owner: owner1, mint: mint)
         let ata2 = TransactionBuilder.associatedTokenAddress(owner: owner2, mint: mint)
+        #expect(ata1 != nil)
+        #expect(ata2 != nil)
+        #expect(ata1 != ata2)
+    }
+
+    @Test func ataForKnownMintIsNonNil() {
+        // A PDA is by definition off-curve; if ATA derivation returns a result,
+        // it found a valid bump → address is off-curve (that's what makes it a PDA).
+        let owner = Keypair.generate().publicKeyBytes
+        let mint = TransactionBuilder.ataProgramID
+        let ata = TransactionBuilder.associatedTokenAddress(owner: owner, mint: mint)
+        #expect(ata != nil)
+    }
+
+    @Test func differentMintsProduceDifferentATAs() {
+        let owner = Keypair.generate().publicKeyBytes
+        let mint1 = Array(repeating: UInt8(1), count: 32)
+        let mint2 = Array(repeating: UInt8(2), count: 32)
+
+        let ata1 = TransactionBuilder.associatedTokenAddress(owner: owner, mint: mint1)
+        let ata2 = TransactionBuilder.associatedTokenAddress(owner: owner, mint: mint2)
         #expect(ata1 != nil)
         #expect(ata2 != nil)
         #expect(ata1 != ata2)
@@ -794,13 +1141,10 @@ struct AppSettingsTests {
         settings.heliusAPIKey = "custom-key"
         settings.resetAPIKeys()
 
-        // After reset, effective key should fall back to compiled Secrets
         #expect(settings.effectiveHeliusAPIKey == Secrets.heliusAPIKey)
     }
 
     @Test func hapticFeedbackDefaultIsTrue() {
-        // This test checks the default; only meaningful on a fresh install
-        // We verify the type and that it is a Bool that can be toggled
         let settings = AppSettings.shared
         let original = settings.hapticFeedbackEnabled
         defer { settings.hapticFeedbackEnabled = original }
