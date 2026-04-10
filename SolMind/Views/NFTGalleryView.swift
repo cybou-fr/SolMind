@@ -8,6 +8,7 @@ struct NFTGalleryView: View {
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var selectedNFT: NFTAsset?
+    @State private var showMintForm = false
 
     private let heliusService = HeliusService()
     private let columns = [GridItem(.adaptive(minimum: 140, maximum: 200), spacing: 12)]
@@ -74,6 +75,20 @@ struct NFTGalleryView: View {
                 }
                 .help("Refresh NFTs")
                 .disabled(isLoading)
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    showMintForm = true
+                } label: {
+                    Label("Mint NFT", systemImage: "plus.circle.fill")
+                }
+                .help("Mint a compressed NFT on devnet")
+            }
+        }
+        .sheet(isPresented: $showMintForm) {
+            MintNFTFormView(walletAddress: walletViewModel.publicKey ?? "") {
+                // Refresh gallery after successful mint
+                Task { await loadNFTs() }
             }
         }
         .task { await loadNFTs() }
@@ -175,4 +190,183 @@ struct NFTCard: View {
         NFTGalleryView()
     }
     .environment(WalletViewModel())
+}
+
+// MARK: - Mint NFT Form Sheet
+
+struct MintNFTFormView: View {
+    let walletAddress: String
+    let onSuccess: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var nftName: String = ""
+    @State private var symbol: String = ""
+    @State private var nftDescription: String = ""
+    @State private var imageUrl: String = ""
+    @State private var traitsText: String = ""   // "Color=Blue, Rarity=Rare"
+
+    @State private var isMinting = false
+    @State private var mintError: String?
+    @State private var showConfirmation = false
+
+    private let heliusService = HeliusService()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Name *", text: $nftName)
+                    TextField("Symbol * (e.g. COOL)", text: $symbol)
+                        .onChange(of: symbol) { _, new in
+                            if new.count > 10 { symbol = String(new.prefix(10)) }
+                        }
+                    TextField("Description", text: $nftDescription, axis: .vertical)
+                        .lineLimit(3...5)
+                } header: {
+                    Text("Basics")
+                }
+
+                Section {
+                    TextField("Image URL (https://…)", text: $imageUrl)
+                        .textContentType(.URL)
+#if os(iOS)
+                        .keyboardType(.URL)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+#endif
+                    if let url = URL(string: imageUrl), !imageUrl.isEmpty {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().aspectRatio(contentMode: .fit)
+                                    .frame(maxHeight: 160).clipShape(RoundedRectangle(cornerRadius: 8))
+                            case .failure:
+                                Label("Could not load preview", systemImage: "exclamationmark.triangle")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            case .empty:
+                                ProgressView()
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Artwork")
+                } footer: {
+                    Text("Leave blank to use a SolMind placeholder image.")
+                        .font(.caption2)
+                }
+
+                Section {
+                    TextField("Traits (e.g. Color=Blue, Rarity=Rare)", text: $traitsText, axis: .vertical)
+                        .lineLimit(2...4)
+                } header: {
+                    Text("Traits")
+                } footer: {
+                    Text("Comma-separated Key=Value pairs. Example: Background=Space, Edition=1")
+                        .font(.caption2)
+                }
+
+                if let error = mintError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.circle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Mint Compressed NFT")
+#if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+#endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Mint") {
+                        showConfirmation = true
+                    }
+                    .disabled(nftName.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              symbol.trimmingCharacters(in: .whitespaces).isEmpty ||
+                              isMinting)
+                    .bold()
+                }
+            }
+            .confirmationDialog(
+                "Mint \"\(nftName)\" [\(symbol.uppercased())] on Devnet?",
+                isPresented: $showConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Mint NFT (FREE via Helius)") {
+                    Task { await mintNFT() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This mints a compressed cNFT on Solana Devnet. No real funds are used.")
+            }
+            .overlay {
+                if isMinting {
+                    ZStack {
+                        Color.black.opacity(0.35).ignoresSafeArea()
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text("Minting NFT…")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.white)
+                        }
+                        .padding(24)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Mint
+
+    private func mintNFT() async {
+        isMinting = true
+        mintError = nil
+
+        let apiKey = AppSettings.shared.effectiveHeliusAPIKey
+        guard !apiKey.isEmpty else {
+            mintError = "Helius API key not configured. Go to Settings → API Keys."
+            isMinting = false
+            return
+        }
+        guard !walletAddress.isEmpty else {
+            mintError = "Wallet not connected."
+            isMinting = false
+            return
+        }
+
+        // Parse traits from "Key=Value, Key2=Value2"
+        let attributes: [[String: String]] = traitsText
+            .split(separator: ",")
+            .compactMap { part -> [String: String]? in
+                let pair = part.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+                guard pair.count == 2, !pair[0].isEmpty else { return nil }
+                return ["trait_type": pair[0], "value": pair[1]]
+            }
+
+        do {
+            _ = try await heliusService.mintCompressedNft(
+                name: nftName.trimmingCharacters(in: .whitespaces),
+                symbol: symbol.uppercased().trimmingCharacters(in: .whitespaces),
+                description: nftDescription.trimmingCharacters(in: .whitespaces),
+                owner: walletAddress,
+                imageUrl: imageUrl.trimmingCharacters(in: .whitespaces),
+                attributes: attributes
+            )
+            isMinting = false
+            ToastManager.shared.success("✓ NFT '\(nftName)' minted!")
+            onSuccess()
+            dismiss()
+        } catch {
+            isMinting = false
+            mintError = error.localizedDescription
+        }
+    }
 }

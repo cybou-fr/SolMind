@@ -5,7 +5,7 @@ import Foundation
 
 struct AnalyzeProgramTool: Tool {
     let name = "analyzeProgram"
-    let description = "Look up any Solana program or account by base58 address or name (e.g. Jupiter, Raydium, Metaplex)."
+    let description = "Look up any Solana program or account by base58 address or name (e.g. Jupiter, Raydium, Metaplex). Pass 'list' or 'list devnet' to browse all well-known programs available on devnet."
 
     private let solanaClient: SolanaClient
 
@@ -15,14 +15,29 @@ struct AnalyzeProgramTool: Tool {
 
     @Generable
     struct Arguments {
-        @Guide(description: "Base58 address or program name")
+        @Guide(description: "Base58 address, program name, or 'list' / 'list devnet' to browse all known programs")
         var query: String
     }
 
     func call(arguments: Arguments) async throws -> String {
         let input = arguments.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !input.isEmpty else {
-            return "Please provide a Solana address or program name to look up."
+            return "Please provide a Solana address, program name, or 'list' to browse known programs."
+        }
+
+        // 0. List / browse intent
+        let lower = input.lowercased()
+        let isListIntent = lower == "list" || lower == "list devnet" || lower == "all" ||
+            lower.hasPrefix("list ") || lower.hasPrefix("show ") || lower.hasPrefix("browse") ||
+            lower.contains("known program") || lower.contains("show program") ||
+            lower.contains("available program") || lower.contains("what program")
+        if isListIntent {
+            let devnetOnly = !lower.contains("all") // default to devnet-featured
+            let body = KnownPrograms.listByCategory(devnetOnly: devnetOnly)
+            let header = devnetOnly
+                ? "Here are the well-known Solana programs available on **devnet** — you can analyze any of them by address or name from chat:\n\n"
+                : "Here is the full registry of known Solana programs:\n\n"
+            return header + body
         }
 
         // 1. If it looks like a base58 address, try direct lookup first

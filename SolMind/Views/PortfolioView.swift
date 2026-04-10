@@ -10,7 +10,6 @@ import AppKit
 struct PortfolioView: View {
     @Environment(WalletViewModel.self) private var walletViewModel
     @State private var isRefreshing = false
-    @State private var rotationDegrees: Double = 0
     @State private var addressCopied = false
     @State private var copiedSignature: String? = nil
     @State private var isRequestingAirdrop = false
@@ -57,21 +56,20 @@ struct PortfolioView: View {
                     Button {
                         Task {
                             isRefreshing = true
-                            withAnimation(.linear(duration: 0.7).repeatForever(autoreverses: false)) {
-                                rotationDegrees = 360
-                            }
                             await walletViewModel.refreshBalance()
                             await walletViewModel.refreshTransactionHistory()
                             isRefreshing = false
-                            withAnimation(.default) { rotationDegrees = 0 }
                             if walletViewModel.lastRefreshFailed {
                                 ToastManager.shared.warning("Balance refresh failed — showing cached data")
                             }
                         }
                     } label: {
                         HStack(spacing: 4) {
-                            Image(systemName: "arrow.clockwise")
-                                .rotationEffect(.degrees(rotationDegrees))
+                            if isRefreshing {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                            }
                             if walletViewModel.lastRefreshFailed {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)

@@ -32,9 +32,108 @@ enum KnownPrograms {
     static func search(name: String) -> [ProgramInfo] {
         let q = name.lowercased()
         return list.filter {
-            $0.name.lowercased().contains(q) || $0.description.lowercased().contains(q)
+            $0.name.lowercased().contains(q) || $0.description.lowercased().contains(q) ||
+            $0.category.lowercased().contains(q)
         }
     }
+
+    /// Returns programs grouped by category as a formatted string.
+    static func listByCategory(devnetOnly: Bool = false) -> String {
+        let programs = devnetOnly ? devnetFeatured : list
+        let grouped = Dictionary(grouping: programs, by: \.category)
+        let order = ["System", "Token", "NFT", "DeFi", "Staking", "Governance", "Bridge"]
+        var lines: [String] = []
+        for category in order {
+            guard let entries = grouped[category], !entries.isEmpty else { continue }
+            lines.append("**\(category)**")
+            for p in entries.sorted(by: { $0.name < $1.name }) {
+                lines.append("• **\(p.name)** — \(p.address)")
+                lines.append("  \(p.description)")
+            }
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Devnet-featured programs
+    // These are deployed on Solana devnet and can be explored or interacted with from SolMind chat.
+
+    static let devnetFeatured: [ProgramInfo] = [
+        .init(address: "11111111111111111111111111111111",
+              name: "System Program",
+              description: "Native system program for SOL transfers, account creation, and program deployment. Use it to send SOL from chat.",
+              category: "System", website: nil),
+
+        .init(address: "ComputeBudget111111111111111111111111111111",
+              name: "Compute Budget Program",
+              description: "Set compute unit limits and priority fees per transaction. Referenced automatically for complex operations.",
+              category: "System", website: nil),
+
+        .init(address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+              name: "SPL Token Program",
+              description: "The standard Solana fungible token program on devnet. Every SPL token you create with SolMind is managed by this program. Try: \"create a token called DEMO\".",
+              category: "Token", website: "https://spl.solana.com/token"),
+
+        .init(address: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+              name: "Token-2022 (Token Extensions)",
+              description: "Next-gen SPL token program deployed on devnet. Supports transfer fees, interest-bearing tokens, confidential transfers, and non-transferable tokens.",
+              category: "Token", website: "https://spl.solana.com/token-2022"),
+
+        .init(address: "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bQ",
+              name: "Associated Token Account Program",
+              description: "Creates the standard per-wallet token accounts (ATAs). Called automatically when you send SPL tokens to a new address.",
+              category: "Token", website: nil),
+
+        .init(address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+              name: "USDC Devnet Mint",
+              description: "The official Circle USDC mint address on Solana devnet. Claim free devnet USDC at faucet.circle.com. Use it with SolMind to test SPL token transfers.",
+              category: "Token", website: "https://faucet.circle.com"),
+
+        .init(address: "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+              name: "Metaplex Token Metadata",
+              description: "Deployed on devnet. Stores name, symbol, image URI, and royalties for all Solana NFTs. SolMind-minted cNFTs use this indirectly via Helius.",
+              category: "NFT", website: "https://metaplex.com"),
+
+        .init(address: "BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY",
+              name: "Metaplex Bubblegum (Compressed NFTs)",
+              description: "Deployed on devnet. SolMind mints compressed NFTs through this program via Helius. Try: \"mint me an NFT\" from chat.",
+              category: "NFT", website: "https://developers.metaplex.com/bubblegum"),
+
+        .init(address: "Stake11111111111111111111111111111111111111",
+              name: "Stake Program",
+              description: "Native Solana staking program on devnet. Delegate SOL to validators to simulate staking. Not callable from SolMind directly — use Solana CLI or Explorer.",
+              category: "Staking", website: nil),
+
+        .init(address: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
+              name: "Jupiter Aggregator v6",
+              description: "Jupiter DEX aggregator on devnet (limited liquidity). SolMind uses Jupiter for price quotes. Swaps may fail on devnet due to low liquidity.",
+              category: "DeFi", website: "https://jup.ag"),
+
+        .init(address: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+              name: "Raydium AMM v4",
+              description: "Raydium AMM deployed on devnet. One of the largest Solana DEX programs. Inspect its on-chain state by analyzing the address from chat.",
+              category: "DeFi", website: "https://raydium.io"),
+
+        .init(address: "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+              name: "Orca Whirlpools",
+              description: "Orca concentrated liquidity DEX program on devnet. Explore its account state or ask about it in chat.",
+              category: "DeFi", website: "https://orca.so"),
+
+        .init(address: "GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw",
+              name: "SPL Governance",
+              description: "Official Solana DAO/governance program on devnet. Powers on-chain voting, proposals, and treasury execution for DAOs. Explore via Realms.",
+              category: "Governance", website: "https://realms.today"),
+
+        .init(address: "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+              name: "Squads Multisig v4",
+              description: "Deployed on devnet. On-chain multisig and program upgrade authority management. Used by many Solana teams to secure treasuries and program upgrades.",
+              category: "Governance", website: "https://squads.so"),
+
+        .init(address: "worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth",
+              name: "Wormhole Bridge",
+              description: "Wormhole cross-chain messaging program on devnet. Bridges tokens and messages between Solana and 20+ chains. Explore on devnet Explorer.",
+              category: "Bridge", website: "https://wormhole.com"),
+    ]
 
     // MARK: - Program List
 

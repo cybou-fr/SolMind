@@ -90,9 +90,9 @@ struct CreateTokenTool: Tool {
             return "⚠️ TERMINAL: Mint creation returned an invalid signature — the transaction may not have been sent. Signature: \(createSig). Do NOT retry automatically."
         }
 
-        // Give devnet more time to confirm before the second transaction references the mint account
-        await MainActor.run { ToastManager.shared.info("Waiting for mint to confirm…") }
-        try await Task.sleep(nanoseconds: 4_000_000_000)
+        // Wait for the mint account to be confirmed before referencing it in the next tx.
+        await MainActor.run { ToastManager.shared.info("Confirming mint creation…") }
+        _ = try? await solanaClient.confirmTransaction(signature: createSig, maxAttempts: 20)
 
         // --- Transaction 2: createATA (idempotent) + mintTo ---
         let blockhash2 = try await solanaClient.getLatestBlockhash()
@@ -120,6 +120,14 @@ struct CreateTokenTool: Tool {
         }
 
         let mintAddress = mintKeypair.publicKeyBase58
+
+        // Persist metadata so Portfolio shows name/symbol instead of raw address.
+        AppSettings.shared.registerToken(
+            mint: mintAddress,
+            symbol: arguments.symbol.uppercased(),
+            name: arguments.tokenName
+        )
+
         await MainActor.run { ToastManager.shared.success("✓ Token '\(arguments.symbol.uppercased())' created!") }
         return """
         ✅ DEVNET: Token created successfully!

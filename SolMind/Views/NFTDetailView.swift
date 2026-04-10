@@ -6,6 +6,12 @@ struct NFTDetailView: View {
     let nft: NFTAsset
     @Environment(\.dismiss) private var dismiss
     @State private var copiedAssetID = false
+    @State private var liveAsset: NFTAsset?       // refreshed from Helius DAS
+    @State private var isFetchingMeta = false
+
+    private var displayed: NFTAsset { liveAsset ?? nft }
+
+    private let heliusService = HeliusService()
 
     var body: some View {
         NavigationStack {
@@ -13,16 +19,21 @@ struct NFTDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
 
                     // MARK: Artwork
-                    NFTDetailImage(imageURL: nft.imageURL)
+                    NFTDetailImage(imageURL: displayed.imageURL)
 
                     VStack(alignment: .leading, spacing: 6) {
                         // Name
-                        Text(nft.name)
-                            .font(.title2.bold())
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack {
+                            Text(displayed.name)
+                                .font(.title2.bold())
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if isFetchingMeta {
+                                ProgressView().scaleEffect(0.7)
+                            }
+                        }
 
                         // Collection
-                        if let collection = nft.collectionName, !collection.isEmpty {
+                        if let collection = displayed.collectionName, !collection.isEmpty {
                             Label(collection, systemImage: "rectangle.stack.fill")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
@@ -36,14 +47,14 @@ struct NFTDetailView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             HStack {
-                                Text(nft.id)
+                                Text(displayed.id)
                                     .font(.caption.monospaced())
                                     .lineLimit(2)
                                     .truncationMode(.middle)
                                     .foregroundStyle(.primary)
                                 Spacer(minLength: 8)
                                 Button {
-                                    copyToClipboard(nft.id)
+                                    copyToClipboard(displayed.id)
                                     copiedAssetID = true
                                     Task {
                                         try? await Task.sleep(for: .seconds(2))
@@ -56,7 +67,7 @@ struct NFTDetailView: View {
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(copiedAssetID ? "Copied" : "Copy Asset ID")
 
-                                Link(destination: SolanaNetwork.explorerURL(address: nft.id)) {
+                                Link(destination: SolanaNetwork.explorerURL(address: displayed.id)) {
                                     Image(systemName: "arrow.up.right.square")
                                         .foregroundStyle(.secondary)
                                 }
@@ -67,7 +78,7 @@ struct NFTDetailView: View {
                     }
 
                     // MARK: Description
-                    if let desc = nft.nftDescription, !desc.isEmpty {
+                    if let desc = displayed.nftDescription, !desc.isEmpty {
                         GroupBox("Description") {
                             Text(desc)
                                 .font(.body)
@@ -77,7 +88,7 @@ struct NFTDetailView: View {
                     }
 
                     // MARK: Attributes
-                    if !nft.attributes.isEmpty {
+                    if !displayed.attributes.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Attributes")
                                 .font(.headline)
@@ -85,7 +96,7 @@ struct NFTDetailView: View {
                                 columns: [GridItem(.adaptive(minimum: 130), spacing: 10)],
                                 spacing: 10
                             ) {
-                                ForEach(nft.attributes, id: \.trait) { attr in
+                                ForEach(displayed.attributes, id: \.trait) { attr in
                                     AttributeChipView(trait: attr.trait, value: attr.value)
                                 }
                             }
@@ -102,6 +113,13 @@ struct NFTDetailView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .task {
+                isFetchingMeta = true
+                if let fresh = try? await heliusService.getAsset(id: nft.id) {
+                    liveAsset = fresh
+                }
+                isFetchingMeta = false
             }
         }
     }

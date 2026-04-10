@@ -179,23 +179,43 @@ class WalletViewModel {
         throw RPCError(code: -1, message: "All devnet faucet providers are rate-limited. Try again later or visit faucet.solana.com.")
     }
 
-    // MARK: - Known Token Metadata (devnet)
+    // MARK: - Known Token Metadata
 
     private func knownSymbol(for mint: String) -> String {
-        knownTokens[mint]?.symbol ?? mint.prefix(6).description
+        if let meta = knownTokens[mint] { return meta.symbol }
+        if let meta = AppSettings.shared.tokenMetadata(for: mint) { return meta.symbol }
+        return mint.prefix(6).description
     }
 
     private func knownName(for mint: String) -> String {
-        knownTokens[mint]?.name ?? "Token \(mint.prefix(6))…"
+        if let meta = knownTokens[mint] { return meta.name }
+        if let meta = AppSettings.shared.tokenMetadata(for: mint) { return meta.name }
+        return "Token \(mint.prefix(6))…"
     }
 
+    /// Hardcoded well-known mints (mainnet + devnet canonical addresses).
     private let knownTokens: [String: (symbol: String, name: String)] = [
-        // Mainnet / standard mints (Jupiter price API uses these)
-        "So11111111111111111111111111111111111111112": ("SOL", "Wrapped SOL"),
+        // Wrapped / native SOL
+        "So11111111111111111111111111111111111111112": ("SOL",  "Wrapped SOL"),
+        // USDC
         "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": ("USDC", "USD Coin"),
+        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": ("USDC", "USD Coin (devnet)"),
+        // USDT
         "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": ("USDT", "Tether USD"),
-        // Devnet-specific mints
-        "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": ("USDC", "USD Coin (devnet)")
+        // EURC (Circle Euro Coin – mainnet)
+        "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr": ("EURC", "Euro Coin"),
+        // Wrapped ETH (Wormhole)
+        "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs": ("ETH",  "Ether (Wormhole)"),
+        // Marinade staked SOL
+        "mSoLzYCxHdYgdzU16g5QSh3i5K3z3kZMofdkxtBDnFt": ("mSOL", "Marinade Staked SOL"),
+        // BONK
+        "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": ("BONK", "Bonk"),
+        // JUP
+        "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN":  ("JUP",  "Jupiter"),
+        // RAY
+        "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R": ("RAY",  "Raydium"),
+        // PYTH
+        "HZ1JovNiVvGrG2fvSXCZPdVZHqAHu7aXXSLQ6gEzDhSH": ("PYTH", "Pyth Network"),
     ]
 }
 
