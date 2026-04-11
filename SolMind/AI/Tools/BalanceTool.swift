@@ -33,6 +33,11 @@ struct BalanceTool: Tool {
         Self.knownMints[mint] ?? "\(mint.prefix(6))…"
     }
 
+    /// Abbreviates a base58 address for safe injection into FM tool results.
+    private func abbrev(_ address: String) -> String {
+        PromptSanitizer.abbreviateBase58(address)
+    }
+
     func call(arguments: Arguments) async throws -> String {
         guard let publicKey = walletManager.publicKey else {
             return "Wallet not connected."
@@ -42,11 +47,12 @@ struct BalanceTool: Tool {
             if let mint = arguments.tokenMint, !mint.isEmpty {
                 let accounts = try await solanaClient.getTokenAccounts(owner: publicKey)
                 if let account = accounts.first(where: { $0.mint == mint }) {
-                    return "Token balance for mint \(mint): \(account.displayAmount) [DEVNET]"
+                    // Abbreviate mint — raw base58 addresses trigger FM language classifier.
+                    return "Token balance for \(knownSymbol(for: mint)) (\(abbrev(mint))): \(account.displayAmount) [DEVNET]"
                 }
                 // Also fetch SOL so the model has full context
                 let sol = try await solanaClient.getSOLBalance(publicKey: publicKey)
-                return "No token account found for mint \(mint) on devnet. Current SOL balance: \(String(format: "%.6f", sol)) SOL. The wallet may not have received this token yet — use the faucet to get SOL first, then acquire tokens via swap."
+                return "No token account found for \(abbrev(mint)) on devnet. Current SOL balance: \(String(format: "%.6f", sol)) SOL. The wallet may not have received this token yet — use the faucet to get SOL first, then acquire tokens via swap."
             } else {
                 let balance = try await solanaClient.getSOLBalance(publicKey: publicKey)
                 let tokenAccounts = try await solanaClient.getTokenAccounts(owner: publicKey)

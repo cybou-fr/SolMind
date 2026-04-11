@@ -14,7 +14,14 @@ enum AIInstructions {
         statsContext: String,
         userMessage: String
     ) -> String {
-        var parts = ["Wallet: \(walletAddress)"]
+        // IMPORTANT: Never inject raw base58 addresses into FM prompts.
+        // The on-device language classifier treats 32+ char base58 runs as Catalan/Slovak
+        // and throws GenerationError.unsupportedLanguageOrLocale.
+        // Abbreviate to 4+4 chars — enough to identify the wallet without triggering FM.
+        let safeAddress = walletAddress.count > 12
+            ? "\(walletAddress.prefix(4))…\(walletAddress.suffix(4))"
+            : walletAddress
+        var parts = ["Wallet: \(safeAddress)"]
         let solStr = String(format: "%.4f SOL", solBalance)
         if let usd = solUSDValue {
             parts.append(String(format: "%@ ($%.2f)", solStr, usd))

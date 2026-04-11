@@ -56,6 +56,12 @@ struct SendTool: Tool {
         "WSOL":  "So11111111111111111111111111111111111111112",
     ]
 
+    /// Abbreviates a base58 address for safe injection into FM tool results.
+    /// Full 32–44 char base58 strings trigger the FM language classifier.
+    private func abbrev(_ address: String) -> String {
+        PromptSanitizer.abbreviateBase58(address)
+    }
+
     /// Returns nil for SOL (native), or a mint address for SPL tokens.
     /// Accepts symbol strings ("USDC"), mint addresses (44-char base58), or nil/"SOL".
     private func resolveMint(_ token: String?, walletTokens: [TokenAccount]) -> String?? {
@@ -86,8 +92,16 @@ struct SendTool: Tool {
             return "Wallet not connected."
         }
 
-        guard Base58.isValidAddress(arguments.recipient) else {
-            return "Invalid recipient address '\(arguments.recipient)'. Provide a valid Solana base58 address."
+        // Resolve [addr0] / [addr1] tags → full base58 addresses.
+        // AddressRegistry is populated by ChatViewModel before every FM inference call
+        // so that raw addresses never enter the FM prompt (which triggers Croatian detection).
+        let resolvedRecipient = await AddressRegistry.shared.resolve(arguments.recipient) ?? arguments.recipient
+
+        guard Base58.isValidAddress(resolvedRecipient) else {
+            if arguments.recipient.hasPrefix("[addr") {
+                return "I wasn't able to look up the recipient address from your message. Please use the QR scanner or retype: \"send X SOL to <address>\"."
+            }
+            return "Invalid recipient address '\(abbrev(arguments.recipient))'. Provide a valid Solana base58 address."
         }
 
         guard arguments.amount > 0 else {
@@ -105,20 +119,21 @@ struct SendTool: Tool {
 
         if let mintAddress = resolved {
             return try await sendSPLTokens(
-                recipient: arguments.recipient,
+                recipient: resolvedRecipient,
                 amount: arguments.amount,
                 mintAddress: mintAddress,
                 symbol: arguments.token?.uppercased() ?? String(mintAddress.prefix(6)),
                 walletTokens: walletTokens
             )
         } else {
-            return try await sendSOL(recipient: arguments.recipient, amount: arguments.amount)
+            return try await sendSOL(recipient: resolvedRecipient, amount: arguments.amount)
         }
     }
 
     // MARK: - SOL Transfer
 
     private func sendSOL(recipient: String, amount: Double) async throws -> String {
+        // `recipient` is already a resolved full base58 address — validated in call().
         let preview = TransactionPreview(
             action: "send",
             amount: amount,
@@ -147,7 +162,7 @@ struct SendTool: Tool {
             }
 
             await MainActor.run { ToastManager.shared.success("✓ \(amount) SOL sent!") }
-            return "✅ DEVNET: Sent \(amount) SOL → \(recipient). TX: \(signature.prefix(12))…"
+            return "✅ DEVNET: Sent \(amount) SOL → \(abbrev(recipient)). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Send failed") }
             return "⚠️ TERMINAL: SOL transfer failed — \(error.localizedDescription). Do NOT retry automatically."
@@ -216,7 +231,7 @@ struct SendTool: Tool {
             }
 
             await MainActor.run { ToastManager.shared.success("✓ \(amount) \(displaySymbol) sent!") }
-            return "✅ DEVNET: Sent \(amount) \(displaySymbol) → \(recipient). TX: \(signature.prefix(12))…"
+            return "✅ DEVNET: Sent \(amount) \(displaySymbol) → \(abbrev(recipient)). TX: \(signature.prefix(12))…"
         } catch {
             await MainActor.run { ToastManager.shared.error("Transfer failed") }
             return "⚠️ TERMINAL: \(displaySymbol) transfer failed — \(error.localizedDescription). Do NOT retry automatically."

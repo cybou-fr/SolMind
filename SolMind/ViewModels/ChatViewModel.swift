@@ -133,6 +133,13 @@ class ChatViewModel {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isProcessing else { return }
 
+        // Pre-extract any raw base58 addresses from the user's message and store them
+        // in AddressRegistry. The FM prompt will use [addr0] / [addr1] tags — no raw
+        // base58 in the prompt means no Croatian/Catalan language-classifier triggers.
+        // Tools (SendTool) resolve the tags back to full addresses at call time.
+        let promptText = await AddressRegistry.shared.processUserText(trimmed)
+        let hadAddresses = await !AddressRegistry.shared.isEmpty
+
         // OPT-01: Classify intent before any FM or tool work.
         let intent = IntentClassifier.classify(trimmed)
         let walletBalance = walletVM?.solBalance ?? 0
@@ -228,7 +235,7 @@ class ChatViewModel {
 
             if case .directKnowledge = intent {
                 // OPT-03: Ephemeral no-tool session — saves all tool schema tokens
-                let prompt = buildKnowledgePrompt(userText: trimmed)
+                let prompt = buildKnowledgePrompt(userText: promptText)
                 // OPT-10: Token estimation
                 lastPromptTokenEstimate = prompt.count / 4
                 sessionTokensUsed += lastPromptTokenEstimate
@@ -237,7 +244,9 @@ class ChatViewModel {
                 // OPT-08: Pass pre-fetched price to buildContextualPrompt so the
                 // context block always shows a consistent USD value even if walletVM
                 // hasn't refreshed yet.
-                let prompt = buildContextualPrompt(userText: trimmed, preFetchedSOLPrice: preFetchedSOLPrice)
+                // Use promptText (addresses already replaced with [addr0] tags) so that
+                // raw base58 never reaches the FM language classifier.
+                let prompt = buildContextualPrompt(userText: promptText, preFetchedSOLPrice: preFetchedSOLPrice)
                 // OPT-10: Token estimation
                 lastPromptTokenEstimate = prompt.count / 4
                 sessionTokensUsed += lastPromptTokenEstimate
@@ -278,7 +287,7 @@ class ChatViewModel {
                 try? await Task.sleep(for: .seconds(4))
                 await walletVM?.refreshBalance()
             }
-            let retryPrompt = buildContextualPrompt(userText: trimmed, preFetchedSOLPrice: preFetchedSOLPrice)
+            let retryPrompt = buildContextualPrompt(userText: promptText, preFetchedSOLPrice: preFetchedSOLPrice)
             do {
                 let start = Date()
                 let retryResponse = try await collectStream(retryPrompt)
@@ -304,27 +313,78 @@ class ChatViewModel {
         } catch let genError as LanguageModelSession.GenerationError {
             confirmationHandlerRef?.clearPending()
             switch genError {
-            case .unsupportedLanguageOrLocale(let ctx):
-                let currentLocale = Locale.current.identifier
-                let langCode      = Locale.current.language.languageCode?.identifier ?? "?"
-                let preferredRaw  = Locale.preferredLanguages.prefix(2).joined(separator: ", ")
-                updateMessage(at: msgIndex,
-                              content: """
-                              ⚠️ Foundation Models: unsupportedLanguageOrLocale
+            case .unsupportedLanguageOrLocale:
+                // Strategy: this error has two causes:
+                //   (A) Content-triggered — tool results in session history contained base58
+                //       addresses / long encoded tokens that FM's language classifier flagged.
+                //       Recoverable: reset session (clears tainted history) + bare prompt.
+                //   (B) System locale — Apple Intelligence language ≠ English. Not recoverable
+                //       by changing the prompt; requires a Settings change.
+                //
+                // Recovery: 1. reset session (clears all history from prior tool calls)
+                //           2. retry with the BARE sanitized user question — no context injection.
+                //              A bare prompt excludes wallet data, stats, and knowledge snippets
+                //              that might marginally trigger the classifier.
+                //           3. If bare retry also fails → case B → show Settings guidance.
+                aiSession.resetFull()
+                hasInjectedContext = false
+                turnsSinceReset = 0
 
-                              **Locale**: `\(currentLocale)` · **Lang**: `\(langCode)` · **Preferred**: `\(preferredRaw)`
-                              **Debug context**: `\(ctx.debugDescription)`
+                let (sanitizedInput, inputHadTriggers) = PromptSanitizer.sanitize(promptText)
 
-                              Fixes:
-                              1. **System Settings → Apple Intelligence & Siri → Language** → set to English or French.
-                              2. If Apple Intelligence language ≠ app language, they must align.
-                              3. Try **System Settings → General → Language & Region → Apps → SolMind → English (US)**.
-                              """,
-                              isStreaming: false)
-                aiUnavailableReason = "Foundation Models locale error (\(currentLocale)). Check Apple Intelligence & Siri → Language."
-                aiUnavailable = true
+                // Bare retry — user question only, no context block, clean session.
+                do {
+                    let bareResponse = try await streamWithRecovery(sanitizedInput)
+                    updateMessage(at: msgIndex, content: bareResponse, isStreaming: false)
+                    currentSuggestions = SuggestionEngine.suggestions(
+                        for: bareResponse, userMessage: trimmed, walletHasBalance: walletBalance > 0
+                    )
+                    autoTitleIfNeeded(from: trimmed)
+                    let retryCacheKey = ResponseCache.makeKey(query: trimmed, intent: intent, walletBalance: walletBalance)
+                    let retryTTL = ResponseCache.ttl(for: intent)
+                    if retryTTL > 0 {
+                        await responseCache.set(bareResponse, for: retryCacheKey, ttl: retryTTL)
+                    }
+                } catch AIError.contextWindowExceeded {
+                    // Bare retry hit context overflow — show overflow message, NOT content-trigger message.
+                    aiSession.resetFull()
+                    updateMessage(at: msgIndex,
+                                  content: "⚠️ The context window was exceeded even on recovery. Please start a new chat (⌘K) and repeat your request.",
+                                  isStreaming: false)
+                } catch {
+                    // Bare retry failed with locale or other error.
+                    // Use hadAddresses (pre-extracted) + sanitizer check to classify the error.
+                    let hadTriggers = inputHadTriggers || hadAddresses || PromptSanitizer.containsTriggers(trimmed)
+                    if hadTriggers {
+                        // Content-triggered: user typed/pasted a raw address or encoded blob.
+                        updateMessage(at: msgIndex, content: """
+                            ⚠️ Your message contained data (like a wallet address or encoded text) \
+                            that Apple Intelligence's language filter couldn't handle.
+
+                            **Try:** Rephrase in plain English — for example, "send SOL to my \
+                            friend's wallet" instead of pasting an address directly. Use the QR \
+                            scanner to send to a specific address.
+                            """, isStreaming: false)
+                        // Session was already reset; AI is still functional.
+                    } else {
+                        // System locale mismatch — prompt was clean but FM still rejected it.
+                        updateMessage(at: msgIndex, content: """
+                            ⚠️ Apple Intelligence Language Error
+
+                            The on-device model returned a language filter error. This usually \
+                            means the Apple Intelligence language doesn't match your app language.
+
+                            **To fix:**
+                            1. **System Settings → Apple Intelligence & Siri → Language** → English (US)
+                            2. **System Settings → General → Language & Region → Apps → SolMind** → English
+                            3. Restart the app after changing.
+                            """, isStreaming: false)
+                        aiUnavailableReason = "Apple Intelligence language mismatch. See System Settings → Apple Intelligence & Siri."
+                        aiUnavailable = true
+                    }
+                }
             default:
-                updateMessage(at: msgIndex, content: "⚠️ AI error: \(genError.localizedDescription)\n\nType: \(genError)", isStreaming: false)
+                updateMessage(at: msgIndex, content: "⚠️ AI error: \(genError.localizedDescription)", isStreaming: false)
             }
         } catch {
             let errorDesc = error.localizedDescription
@@ -364,6 +424,7 @@ class ChatViewModel {
         lastPromptTokenEstimate = 0
         sessionTokensUsed = 0
         Task { await responseCache.invalidateAll() }
+        Task { await AddressRegistry.shared.clear() }
     }
 
     func deleteConversation(_ convo: Conversation) {

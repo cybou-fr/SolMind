@@ -47,7 +47,10 @@ enum KnownPrograms {
             guard let entries = grouped[category], !entries.isEmpty else { continue }
             lines.append("**\(category)**")
             for p in entries.sorted(by: { $0.name < $1.name }) {
-                lines.append("• **\(p.name)** — \(p.address)")
+                // Abbreviate address — raw 32–44 char base58 strings in tool results are stored
+                // in the FM session history and trigger unsupportedLanguageOrLocale on next turn.
+                let shortAddr = PromptSanitizer.abbreviateBase58(p.address)
+                lines.append("• **\(p.name)** — \(shortAddr)")
                 lines.append("  \(p.description)")
             }
             lines.append("")

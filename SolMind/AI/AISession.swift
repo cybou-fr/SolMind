@@ -92,7 +92,8 @@ class AISession {
 
     func send(_ prompt: String) async throws -> String {
         guard let session else { throw AIError.notInitialized }
-        let response = try await session.respond(to: prompt)
+        let (safe, _) = PromptSanitizer.sanitize(prompt)
+        let response = try await session.respond(to: safe)
         return response.content
     }
 
@@ -104,10 +105,14 @@ class AISession {
     func streamKnowledge(_ prompt: String) -> AsyncThrowingStream<String, Error> {
         let instructions = Instructions(AIInstructions.system)
         let ephemeralSession = LanguageModelSession(instructions: instructions)
+        let (safePrompt, wasModified) = PromptSanitizer.sanitize(prompt)
+        if wasModified {
+            print("[PromptSanitizer] streamKnowledge: prompt sanitized — potential language-filter triggers removed.")
+        }
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await partial in ephemeralSession.streamResponse(to: prompt) {
+                    for try await partial in ephemeralSession.streamResponse(to: safePrompt) {
                         if Task.isCancelled { break }
                         continuation.yield(partial.content)
                     }
@@ -123,14 +128,18 @@ class AISession {
     // MARK: - Streaming Response
 
     func stream(_ prompt: String) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        let (safePrompt, wasModified) = PromptSanitizer.sanitize(prompt)
+        if wasModified {
+            print("[PromptSanitizer] stream: prompt sanitized — potential language-filter triggers removed.")
+        }
+        return AsyncThrowingStream { continuation in
             guard let session else {
                 continuation.finish(throwing: AIError.notInitialized)
                 return
             }
             let task = Task {
                 do {
-                    for try await partial in session.streamResponse(to: prompt) {
+                    for try await partial in session.streamResponse(to: safePrompt) {
                         // Stop yielding if the consumer has already cancelled.
                         if Task.isCancelled { break }
                         continuation.yield(partial.content)
@@ -145,6 +154,7 @@ class AISession {
         }
     }
 }
+
 
 // MARK: - Errors
 

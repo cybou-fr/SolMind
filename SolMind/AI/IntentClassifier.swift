@@ -71,10 +71,16 @@ enum IntentClassifier {
     // MARK: - Transaction Detection
 
     private static func matchesTransaction(_ q: String) -> Bool {
-        // Faucet / airdrop
-        if q.contains("faucet") || q.contains("airdrop") ||
-           q == "get sol" || q.contains("get devnet sol") ||
-           q.contains("get free sol") || q.contains("free devnet sol") { return true }
+        // Faucet / airdrop — "get", "give me", "send me", "drop", "need", "want" + SOL variants
+        let faucetVerbs = ["get devnet sol", "get free sol", "free devnet sol",
+                           "give me sol", "give me devnet", "give me free",
+                           "send me sol", "send me devnet", "send me free",
+                           "drop me sol", "drop some sol", "i need sol", "need devnet sol",
+                           "want some sol", "want devnet sol"]
+        if q.contains("faucet") || q.contains("airdrop") || q == "get sol" {
+            return true
+        }
+        if faucetVerbs.contains(where: { q.contains($0) }) { return true }
 
         // Send / transfer — verb must be followed by crypto context
         let sendVerbs = ["send ", "transfer ", "pay "]
