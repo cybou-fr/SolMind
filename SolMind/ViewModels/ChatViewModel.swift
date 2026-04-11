@@ -11,6 +11,7 @@ class ChatViewModel {
     var inputText: String = ""
     var isProcessing = false
     var aiUnavailable = false
+    var aiUnavailableReason: String = "Apple Intelligence unavailable. Enable it in System Settings."
 
     // Suggestions shown after each AI response
     var currentSuggestions: [String] = []
@@ -88,6 +89,12 @@ class ChatViewModel {
             AnalyzeProgramTool(solanaClient: solanaClient)
         ]
         aiSession.initialize(tools: tools)
+
+        // Proactive availability check — surfaces language/device issues immediately on launch.
+        if let reason = aiSession.checkAvailability() {
+            aiUnavailableReason = reason
+            aiUnavailable = true
+        }
     }
 
     // MARK: - Manual Message Insertion
@@ -195,11 +202,38 @@ class ChatViewModel {
             persistActive()
             aiSession.reset()   // clean slate for next user message
             return
-        } catch {
-            updateMessage(at: msgIndex, content: error.localizedDescription, isStreaming: false)
+        } catch let genError as LanguageModelSession.GenerationError {
             confirmationHandlerRef?.clearPending()
-            if error.localizedDescription.contains("not available") ||
-               error.localizedDescription.contains("not initialized") {
+            switch genError {
+            case .unsupportedLanguageOrLocale(let ctx):
+                let currentLocale = Locale.current.identifier
+                let langCode      = Locale.current.language.languageCode?.identifier ?? "?"
+                let preferredRaw  = Locale.preferredLanguages.prefix(2).joined(separator: ", ")
+                updateMessage(at: msgIndex,
+                              content: """
+                              ⚠️ Foundation Models: unsupportedLanguageOrLocale
+
+                              **Locale**: `\(currentLocale)` · **Lang**: `\(langCode)` · **Preferred**: `\(preferredRaw)`
+                              **Debug context**: `\(ctx.debugDescription)`
+
+                              Fixes:
+                              1. **System Settings → Apple Intelligence & Siri → Language** → set to English or French.
+                              2. If Apple Intelligence language ≠ app language, they must align.
+                              3. Try **System Settings → General → Language & Region → Apps → SolMind → English (US)**.
+                              """,
+                              isStreaming: false)
+                aiUnavailableReason = "Foundation Models locale error (\(currentLocale)). Check Apple Intelligence & Siri → Language."
+                aiUnavailable = true
+            default:
+                updateMessage(at: msgIndex, content: "⚠️ AI error: \(genError.localizedDescription)\n\nType: \(genError)", isStreaming: false)
+            }
+        } catch {
+            let errorDesc = error.localizedDescription
+            let errorLower = errorDesc.lowercased()
+            confirmationHandlerRef?.clearPending()
+            updateMessage(at: msgIndex, content: errorDesc, isStreaming: false)
+            if errorLower.contains("not available") || errorLower.contains("not initialized") {
+                aiUnavailableReason = "Apple Intelligence unavailable. Enable it in System Settings."
                 aiUnavailable = true
             }
         }
@@ -271,6 +305,21 @@ class ChatViewModel {
     private func streamWithRecovery(_ prompt: String) async throws -> String {
         do {
             return try await collectStream(prompt)
+        } catch let genError as LanguageModelSession.GenerationError {
+            // Use typed matching — avoids fragile string matching and misrouting.
+            switch genError {
+            case .exceededContextWindowSize:
+                aiSession.reset()
+                throw AIError.contextWindowExceeded
+            case .unsupportedLanguageOrLocale:
+                throw genError  // hard stop, handled in sendMessage
+            default:
+                if isContextWindowError(genError) {
+                    aiSession.reset()
+                    throw AIError.contextWindowExceeded
+                }
+                throw genError
+            }
         } catch {
             if isContextWindowError(error) {
                 aiSession.reset()
@@ -282,16 +331,19 @@ class ChatViewModel {
 
     private func isContextWindowError(_ error: Error) -> Bool {
         if case AIError.contextWindowExceeded = error { return true }
+        if let genError = error as? LanguageModelSession.GenerationError {
+            if case .exceededContextWindowSize = genError { return true }
+            // Never treat locale/language errors as context overflow.
+            if case .unsupportedLanguageOrLocale = genError { return false }
+        }
         let text = error.localizedDescription.lowercased()
-        // Apple FoundationModels-specific overflow patterns.
-        // NOTE: Do NOT check for bare "exceeded" — it also matches Solana "Rate limit exceeded"
-        //       which would wrongly reset the AI session on an RPC error.
+        // NOTE: Do NOT check for bare "exceeded" — it also matches Solana "Rate limit exceeded".
+        // Removed "generationerror" wildcard — it was catching ALL GenerationErrors including locale.
         return text.contains("4096")
             || text.contains("context length")
             || text.contains("context window")
             || text.contains("singleextend")
             || text.contains("inferencefailed")
-            || text.contains("generationerror")
     }
 
     private func collectStream(_ prompt: String) async throws -> String {

@@ -8,6 +8,28 @@ class AISession {
     private var tools: [any Tool] = []
     private(set) var isAvailable = false
 
+    // MARK: - Availability
+
+    /// Checks whether the on-device model can actually run.
+    /// Returns nil when available, or a human-readable reason string when not.
+    func checkAvailability() -> String? {
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            return nil
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return "This device doesn't support Apple Intelligence. Apple Silicon is required."
+            case .appleIntelligenceNotEnabled:
+                return "Apple Intelligence is not enabled. Go to Settings → Apple Intelligence & Siri to turn it on."
+            case .modelNotReady:
+                return "Apple Intelligence model is still downloading. Please wait a few minutes and try again."
+            @unknown default:
+                return "Apple Intelligence is unavailable on this device or configuration."
+            }
+        }
+    }
+
     // MARK: - Initialization
 
     func initialize(tools: [any Tool] = []) {
@@ -22,6 +44,10 @@ class AISession {
     }
 
     private func createSession() {
+        // IMPORTANT: Do NOT inject raw base58 addresses anywhere in Instructions or prompts.
+        // Apple's on-device language classifier treats base58 clusters as Catalan/Slovak/etc.
+        // and throws GenerationError.unsupportedLanguageOrLocale. All address resolution is
+        // handled inside individual tool implementations, never in static text.
         let instructions = Instructions(AIInstructions.system)
         if tools.isEmpty {
             session = LanguageModelSession(instructions: instructions)

@@ -15,6 +15,8 @@ struct SolMindApp: App {
     @State private var statsViewModel = SolanaStatsViewModel()
     @Environment(\.scenePhase) private var scenePhase
 
+
+
     var body: some Scene {
         WindowGroup {
             ContentView()

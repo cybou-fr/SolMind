@@ -7,14 +7,15 @@ enum SolanaKnowledge {
 
     // MARK: - System Prompt Knowledge Block (COMPACT — injected every session)
 
+    // NOTE: Raw base58 addresses are intentionally omitted from all text injected into
+    // LanguageModelSession prompts. Apple's on-device language classifier treats clusters of
+    // base58 strings as Catalan, Slovak, or other minority languages and throws
+    // GenerationError.unsupportedLanguageOrLocale. Address resolution is handled inside tools.
     static let systemBlock = """
     SOLANA/DEVNET FACTS: Network=devnet (test only, zero real value). 1 SOL=1e9 lamports. Tx fee≈$0.000025. \
-    Free SOL: getFromFaucet (max 2/req). Free USDC: faucet.circle.com, devnet mint=4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU. \
-    Mainnet mints: USDC=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v, USDT=Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB, \
-    EURC=HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr, JUP=JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN, \
-    RAY=4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R, BONK=DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263, \
-    mSOL=mSoLzYCxHdYgdzU16g5QSh3i5K3z3kZMofdkxtBDnFt. \
-    TOOLS: getBalance, getFromFaucet, sendSOL, getPrice, swapTokens(Jupiter,devnet limited), \
+    Free SOL: getFromFaucet (max 2/req). Free USDC: faucet.circle.com (devnet USDC available). \
+    Supported tokens: USDC, USDT, EURC, JUP, RAY, BONK, mSOL, jitoSOL, bSOL, WIF, PYTH. \
+    TOOLS: getBalance, getFromFaucet, sendTokens, getPrice, swapTokens(Jupiter,devnet limited), \
     getNFTs, mintNFT(cNFT via Helius—ask image URL+traits first), createToken(SPL fungible ~0.005 SOL), \
     getTransactionHistory, buyWithFiat(real money only), analyzeProgram('list devnet' shows all programs). \
     ROUTING: createToken=fungible SPL. mintNFT=NFT. No tool call = no tx. Jupiter swaps fail on devnet.
@@ -31,20 +32,19 @@ enum SolanaKnowledge {
     """
 
     private static let tokens = """
-    SPL Token (TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA): standard fungible tokens (USDC, USDT, JUP, RAY, BONK, PYTH). \
-    Token-2022 (TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb): extensions — transfer fees, interest-bearing, \
+    SPL Token Program: standard fungible tokens (USDC, USDT, JUP, RAY, BONK, PYTH). \
+    Token-2022: extensions — transfer fees, interest-bearing, \
     confidential transfers, non-transferable, metadata pointer, transfer hook. EURC uses Token-2022. \
-    ATA (ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bQ): one deterministic token account per wallet per mint. ~0.002 SOL rent. \
-    Devnet USDC: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU (faucet.circle.com). \
-    WIF=EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm. jitoSOL=J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn. \
-    PYTH=HZ1JovNiVvGrG2fvSXCZPdVZHqAHu7aXXSLQ6gEzDhSH.
+    ATA (Associated Token Account): one deterministic token account per wallet per mint. ~0.002 SOL rent. \
+    Devnet USDC available at faucet.circle.com. \
+    Other supported tokens: WIF, jitoSOL, bSOL, PYTH.
     """
 
     private static let defi = """
-    Jupiter (JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4): best DEX aggregator — routes across Raydium, Orca, Meteora, 20+ pools. \
+    Jupiter: best DEX aggregator — routes across Raydium, Orca, Meteora, 20+ pools. \
     Also: DCA, Limit Orders, Perps. JUP governance token. ALWAYS best entry for swaps. Devnet: no real liquidity. \
-    Raydium (675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8): AMM v4 + CLMM. RAY token. LaunchLab for new tokens. \
-    Orca (whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc): Whirlpools CLMM. ORCA token. Developer-friendly. \
+    Raydium: AMM v4 + CLMM. RAY token. LaunchLab for new tokens. \
+    Orca: Whirlpools CLMM. ORCA token. Developer-friendly. \
     Meteora: DLMM fees auto-adjust to volatility. Kamino: automated liquidity, leveraged yield, lending. \
     MarginFi v2: isolated risk lending, flash loans. Drift: on-chain perps vAMM+JIT. Solend: algorithmic money markets. \
     OpenBook v2: CLOB DEX (Serum successor). Phoenix: permissionless CLOB. Lifinity: oracle-based proactive MM.
@@ -59,9 +59,9 @@ enum SolanaKnowledge {
     """
 
     private static let nft = """
-    Metaplex Token Metadata (metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s): standard for all Solana NFTs. \
+    Metaplex Token Metadata: standard for all Solana NFTs. \
     Stores name, symbol, image URI, royalties, creators, collection, attributes. \
-    Compressed NFTs (cNFTs): Bubblegum (BGUMAp9Gq7iTEuizy4pqaxsTyUCBK68MDfK752saRPUY) + SPL Account Compression (Merkle tree). \
+    Compressed NFTs (cNFTs): Bubblegum + SPL Account Compression (Merkle tree). \
     Cost: ~$0.000005 (vs ~0.01 SOL regular). Helius minting API = fee-free on devnet. \
     mintNFT tool: always ask for name, symbol, description, image URL, traits before calling. \
     Metaplex Core (2024): cheaper, simpler, plugin architecture. Candy Machine v3: collection launches. \
@@ -70,14 +70,14 @@ enum SolanaKnowledge {
     """
 
     private static let governance = """
-    SPL Governance (GovER5Lthms3bLBqWub97yVrMmEogzX7xNjdXpPPCVZw): official on-chain governance. \
+    SPL Governance: official on-chain governance. \
     Proposals, voting weights, treasury execution. UI: realms.today. Used by Solana Foundation, Marinade, Mango, MonkeDAO. \
-    Squads Multisig v4 (SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf): on-chain multisig (2-of-3, 3-of-5 etc). \
+    Squads Multisig v4: on-chain multisig (2-of-3, 3-of-5 etc). \
     Used by most protocols for treasury + upgrade authority. Both deployed on devnet — explore via analyzeProgram.
     """
 
     private static let bridges = """
-    Wormhole (worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth): largest Solana bridge, 30+ chains, W governance token. \
+    Wormhole: largest Solana bridge, 30+ chains, W governance token. \
     deBridge: fast cross-chain swaps, DBR token. Mayan: cross-chain swaps via Wormhole+Uniswap liquidity. \
     Allbridge Core: stablecoin bridging (USDC/USDT cross-chain). LayerZero: growing Solana support. \
     Bridged assets tagged with source: 'Wormhole-wrapped ETH' etc. SOL→ETH: unwrap then bridge back.

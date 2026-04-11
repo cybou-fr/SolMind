@@ -20,7 +20,7 @@ struct ChatView: View {
                 if chatViewModel.aiUnavailable {
                     HStack {
                         Image(systemName: "brain.head.profile")
-                        Text("Apple Intelligence unavailable. Enable it in System Settings.")
+                        Text(chatViewModel.aiUnavailableReason)
                             .font(.caption)
                     }
                     .padding(8)
