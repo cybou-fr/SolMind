@@ -25,6 +25,9 @@ struct SolMindApp: App {
                 .environment(confirmationHandler)
                 .environment(statsViewModel)
                 .task {
+                    // OPT-09: Fetch remote knowledge block update in background (non-blocking).
+                    Task { await KnowledgeUpdater.shared.fetchIfNeeded() }
+
                     // Wire AI tools once wallet is available
                     chatViewModel.setupAI(
                         walletManager: walletViewModel.walletManager,

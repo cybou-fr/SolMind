@@ -14,6 +14,7 @@ struct SettingsView: View {
             apiKeysSection(settings: $settings)
             networkSection
             preferencesSection(settings: $settings)
+            aiTelemetrySection
             aboutSection
             dangerZoneSection
         }
@@ -162,6 +163,78 @@ struct SettingsView: View {
         } header: {
             Label("Danger Zone", systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.red)
+        }
+    }
+
+    // MARK: - AI Telemetry Section (OPT-10)
+
+    private var aiTelemetrySection: some View {
+        Section {
+            LabeledContent("Last Prompt") {
+                Text("\(chatViewModel.lastPromptTokenEstimate) tokens")
+                    .foregroundStyle(chatViewModel.lastPromptTokenEstimate > 3_000 ? .red :
+                                     chatViewModel.lastPromptTokenEstimate > 2_000 ? .orange : .secondary)
+                    .font(.caption.monospacedDigit())
+            }
+            LabeledContent("Session Total") {
+                Text("\(chatViewModel.sessionTokensUsed) tokens")
+                    .foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit())
+            }
+            LabeledContent("Context Budget") {
+                let pct = chatViewModel.lastPromptTokenEstimate > 0
+                    ? Int(Double(chatViewModel.lastPromptTokenEstimate) / 4096.0 * 100)
+                    : 0
+                Text("\(pct)% of 4096")
+                    .foregroundStyle(pct > 75 ? .red : pct > 50 ? .orange : .green)
+                    .font(.caption.monospacedDigit())
+            }
+            LabeledContent("Last Response") {
+                if let t = chatViewModel.lastResponseTime {
+                    Text(String(format: "%.2f s", t))
+                        .foregroundStyle(t > 3 ? .orange : .secondary)
+                        .font(.caption.monospacedDigit())
+                } else {
+                    Text("—").foregroundStyle(.secondary).font(.caption)
+                }
+            }
+            LabeledContent("Session Messages") {
+                Text("\(chatViewModel.sessionMessageCount)")
+                    .foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit())
+            }
+            LabeledContent("Session Transactions") {
+                Text("\(chatViewModel.sessionTransactionCount)")
+                    .foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit())
+            }
+            // OPT-09: Knowledge version
+            LabeledContent("Knowledge Version") {
+                @Bindable var updater = KnowledgeUpdater.shared
+                Text(updater.remoteVersion ?? "built-in")
+                    .foregroundStyle(updater.remoteVersion != nil ? .green : .secondary)
+                    .font(.caption.monospacedDigit())
+            }
+            Button {
+                Task { await KnowledgeUpdater.shared.forceRefresh() }
+            } label: {
+                Label(
+                    KnowledgeUpdater.shared.isFetching ? "Refreshing…" : "Refresh Knowledge Block",
+                    systemImage: "arrow.clockwise"
+                )
+            }
+            .disabled(KnowledgeUpdater.shared.isFetching)
+            if KnowledgeUpdater.shared.overrideSystemBlock != nil {
+                Button(role: .destructive) {
+                    KnowledgeUpdater.shared.clearOverride()
+                } label: {
+                    Label("Reset to Built-in Knowledge", systemImage: "xmark.circle")
+                }
+            }
+        } header: {
+            Label("AI Telemetry", systemImage: "chart.bar.fill")
+        } footer: {
+            Text("Token estimates use 4 chars ≈ 1 token. Budget is the 4 096-token Foundation Models context window. Values reset on New Chat. Knowledge Block can be updated remotely without an app release.")
         }
     }
 

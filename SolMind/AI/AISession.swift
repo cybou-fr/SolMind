@@ -6,6 +6,11 @@ import FoundationModels
 class AISession {
     private var session: LanguageModelSession?
     private var tools: [any Tool] = []
+    /// Full tool set (all 11 tools) — used for transaction-intent messages.
+    private var allTools: [any Tool] = []
+    /// Core tool set (6 tools: balance, faucet, send, price, history, analyzeProgram).
+    /// Used for general-chat messages to save ~250 context tokens vs. the full set.
+    private var coreTools: [any Tool] = []
     private(set) var isAvailable = false
 
     // MARK: - Availability
@@ -32,15 +37,42 @@ class AISession {
 
     // MARK: - Initialization
 
+    /// Standard initializer — all tools treated as both full and core set.
     func initialize(tools: [any Tool] = []) {
-        self.tools = tools
+        self.allTools  = tools
+        self.coreTools = tools
+        self.tools     = tools
         createSession()
         isAvailable = true
     }
 
-    /// Tear down and recreate the session (clears transcript / context window)
-    func reset() {
+    /// OPT-04: Selective tool loading.
+    /// - `allTools`: full set used for transaction intents (swap, mint, createToken, onRamp…).
+    /// - `coreTools`: reduced set for general chat (balance, faucet, send, price, history, analyze).
+    func initialize(allTools: [any Tool], coreTools: [any Tool]) {
+        self.allTools  = allTools
+        self.coreTools = coreTools
+        self.tools     = allTools
         createSession()
+        isAvailable = true
+    }
+
+    /// Reset with the full tool set (transaction-safe baseline).
+    func resetFull() {
+        tools = allTools
+        createSession()
+    }
+
+    /// Reset with the core tool set (general chat — saves ~250 context tokens).
+    func resetCore() {
+        tools = coreTools
+        createSession()
+    }
+
+    /// Tear down and recreate the session with the full tool set.
+    /// Preserved for backward compatibility.
+    func reset() {
+        resetFull()
     }
 
     private func createSession() {
@@ -62,6 +94,30 @@ class AISession {
         guard let session else { throw AIError.notInitialized }
         let response = try await session.respond(to: prompt)
         return response.content
+    }
+
+    // MARK: - Knowledge-Only Stream (OPT-03)
+    // Creates an ephemeral LanguageModelSession with NO tools, used exclusively for
+    // directKnowledge intents. Saves ~250-495 context tokens vs. the full-tool session.
+    // Does not affect `self.session` — the main session is untouched.
+
+    func streamKnowledge(_ prompt: String) -> AsyncThrowingStream<String, Error> {
+        let instructions = Instructions(AIInstructions.system)
+        let ephemeralSession = LanguageModelSession(instructions: instructions)
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await partial in ephemeralSession.streamResponse(to: prompt) {
+                        if Task.isCancelled { break }
+                        continuation.yield(partial.content)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 
     // MARK: - Streaming Response

@@ -11,7 +11,14 @@ enum SolanaKnowledge {
     // LanguageModelSession prompts. Apple's on-device language classifier treats clusters of
     // base58 strings as Catalan, Slovak, or other minority languages and throws
     // GenerationError.unsupportedLanguageOrLocale. Address resolution is handled inside tools.
-    static let systemBlock = """
+
+    /// OPT-09: Returns the active system block — UserDefaults override takes priority over
+    /// the compiled-in default, allowing knowledge updates without an app release.
+    static var systemBlock: String {
+        KnowledgeUpdater.shared.overrideSystemBlock ?? compiledSystemBlock
+    }
+
+    static let compiledSystemBlock = """
     SOLANA/DEVNET FACTS: Network=devnet (test only, zero real value). 1 SOL=1e9 lamports. Tx fee≈$0.000025. \
     Free SOL: getFromFaucet (max 2/req). Free USDC: faucet.circle.com (devnet USDC available). \
     Supported tokens: USDC, USDT, EURC, JUP, RAY, BONK, mSOL, jitoSOL, bSOL, WIF, PYTH. \

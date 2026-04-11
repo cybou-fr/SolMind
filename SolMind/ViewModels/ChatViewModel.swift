@@ -39,6 +39,18 @@ class ChatViewModel {
     // Context injection flag — reset per conversation
     private var hasInjectedContext = false
 
+    // OPT-02: Response cache — LRU with per-intent TTL
+    private let responseCache = ResponseCache()
+
+    // OPT-06: Session continuity — number of consecutive generalChat turns on the current session.
+    // Resets to 0 whenever the session is recreated (transaction, overflow, conversation switch).
+    private var turnsSinceReset: Int = 0
+    private let maxChatTurnsBeforeReset: Int = 3
+
+    // OPT-10: Token usage telemetry (4 chars ≈ 1 token for English text).
+    var lastPromptTokenEstimate: Int = 0
+    var sessionTokensUsed: Int = 0
+
     init() {
         let initial = Conversation(title: "New Chat")
         conversations.append(initial)
@@ -75,20 +87,29 @@ class ChatViewModel {
 
         let jupiterService = JupiterService()
         let heliusService = HeliusService()
-        let tools: [any Tool] = [
+
+        // OPT-04: Core tools (6) — used for general-chat queries (no transaction intent).
+        // Omits heavy transaction tools that consume context without benefit for chat turns.
+        let coreTools: [any Tool] = [
             BalanceTool(walletManager: walletManager, solanaClient: solanaClient),
             FaucetTool(walletManager: walletManager, solanaClient: solanaClient),
             SendTool(walletManager: walletManager, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             PriceTool(),
+            TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
+            AnalyzeProgramTool(solanaClient: solanaClient)
+        ]
+
+        // Transaction-only tools added on top for toolTransaction intent sessions.
+        let txOnlyTools: [any Tool] = [
             SwapTool(walletManager: walletManager, jupiterService: jupiterService, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
             NFTTool(walletManager: walletManager, heliusService: heliusService),
             MintNFTTool(walletManager: walletManager, heliusService: heliusService, confirmationHandler: confirmationHandler),
             CreateTokenTool(walletManager: walletManager, solanaClient: solanaClient, confirmationHandler: confirmationHandler),
-            TransactionHistoryTool(walletManager: walletManager, solanaClient: solanaClient),
-            OnRampTool(walletManager: walletManager),
-            AnalyzeProgramTool(solanaClient: solanaClient)
+            OnRampTool(walletManager: walletManager)
         ]
-        aiSession.initialize(tools: tools)
+
+        let allTools = coreTools + txOnlyTools
+        aiSession.initialize(allTools: allTools, coreTools: coreTools)
 
         // Proactive availability check — surfaces language/device issues immediately on launch.
         if let reason = aiSession.checkAvailability() {
@@ -112,10 +133,14 @@ class ChatViewModel {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isProcessing else { return }
 
-        // Stateless: fresh session + full context injection on every message.
-        // Prevents context accumulation across turns (4096-token limit).
-        aiSession.reset()
-        hasInjectedContext = false
+        // OPT-01: Classify intent before any FM or tool work.
+        let intent = IntentClassifier.classify(trimmed)
+        let walletBalance = walletVM?.solBalance ?? 0
+
+        // OPT-05: Pre-warm price cache concurrently while we set up the session.
+        // PriceService returns cached value immediately if fresh; otherwise the HTTP
+        // request starts in parallel and will be ready by the time FM calls PriceTool.
+        let pricePreFetchTask = Task { try? await PriceService.shared.getPrice(symbol: "SOL") }
 
         let userMessage = ChatMessage(role: .user, content: trimmed, timestamp: Date())
         activeConversation?.messages.append(userMessage)
@@ -123,7 +148,6 @@ class ChatViewModel {
         isProcessing = true
         currentSuggestions = []
         sessionMessageCount += 1
-        // Reset lockout + dismiss any stale confirmation card before starting a new turn.
         confirmationHandlerRef?.clearPending()
         confirmationHandlerRef?.resetLockout()
 
@@ -131,12 +155,95 @@ class ChatViewModel {
         activeConversation?.messages.append(assistantMsg)
         let msgIndex = (activeConversation?.messages.count ?? 1) - 1
 
-        do {
-            // Build contextual prompt (always injects wallet/network context — stateless mode)
-            let prompt = buildContextualPrompt(userText: trimmed)
+        // ── FAST PATH 1: FAQ direct answer (OPT-07) ─────────────────────────────
+        // Checked before intent routing — FAQs bypass even the intent classifier.
+        if let faqEntry = FAQDatabase.directAnswer(for: trimmed) {
+            finishDirectResponse(
+                faqEntry.answer,
+                suggestions: faqEntry.suggestions,
+                at: msgIndex, query: trimmed,
+                intent: .faqAnswer, walletBalance: walletBalance
+            )
+            return
+        }
 
+        // ── FAST PATH 2: Direct balance (OPT-05 — no FM needed) ─────────────────
+        if case .directBalance = intent {
+            let response = buildDirectBalanceResponse()
+            finishDirectResponse(response, at: msgIndex, query: trimmed,
+                                 intent: intent, walletBalance: walletBalance)
+            return
+        }
+
+        // ── FAST PATH 3: Direct price (OPT-05 — no FM needed) ───────────────────
+        if case .directPrice(let sym) = intent {
+            let response = await buildDirectPriceResponse(symbol: sym ?? "SOL")
+            finishDirectResponse(response, at: msgIndex, query: trimmed,
+                                 intent: intent, walletBalance: walletBalance)
+            return
+        }
+
+        // ── RESPONSE CACHE CHECK (OPT-02) ────────────────────────────────────────
+        let cacheKey = ResponseCache.makeKey(query: trimmed, intent: intent, walletBalance: walletBalance)
+        if let cached = await responseCache.get(key: cacheKey) {
+            updateMessage(at: msgIndex, content: cached, isStreaming: false)
+            currentSuggestions = SuggestionEngine.suggestions(
+                for: cached, userMessage: trimmed, walletHasBalance: walletBalance > 0
+            )
+            autoTitleIfNeeded(from: trimmed)
+            isProcessing = false
+            persistActive()
+            return
+        }
+
+        // ── FM INFERENCE PATH ────────────────────────────────────────────────────
+        // OPT-06 + OPT-04: Session continuity gate + lazy tool selection.
+        // Transactions always get a fresh full-tool session (safety-critical).
+        // generalChat reuses the session for up to maxChatTurnsBeforeReset turns.
+        // directKnowledge uses an ephemeral no-tool session — main session untouched.
+        switch intent {
+        case .directKnowledge:
+            break   // ephemeral knowledge session; main session and turnsSinceReset unchanged
+        case .toolTransaction:
+            hasInjectedContext = false
+            aiSession.resetFull()
+            turnsSinceReset = 0
+        default:  // generalChat
+            if turnsSinceReset >= maxChatTurnsBeforeReset {
+                hasInjectedContext = false
+                aiSession.resetCore()
+                turnsSinceReset = 0
+            }
+            // If within the turn window: reuse the live session — transcript is preserved.
+            turnsSinceReset += 1
+        }
+
+        // OPT-08: Resolve the fresh SOL price from the pre-fetch task (OPT-05).
+        // Falls back to walletVM's cached USD value if price fetch is unavailable.
+        let preFetchedSOLPrice: Double? = await pricePreFetchTask.value
+
+        do {
             let start = Date()
-            let fullResponse = try await streamWithRecovery(prompt)
+            let fullResponse: String
+
+            if case .directKnowledge = intent {
+                // OPT-03: Ephemeral no-tool session — saves all tool schema tokens
+                let prompt = buildKnowledgePrompt(userText: trimmed)
+                // OPT-10: Token estimation
+                lastPromptTokenEstimate = prompt.count / 4
+                sessionTokensUsed += lastPromptTokenEstimate
+                fullResponse = try await collectKnowledgeStream(prompt, msgIndex: msgIndex)
+            } else {
+                // OPT-08: Pass pre-fetched price to buildContextualPrompt so the
+                // context block always shows a consistent USD value even if walletVM
+                // hasn't refreshed yet.
+                let prompt = buildContextualPrompt(userText: trimmed, preFetchedSOLPrice: preFetchedSOLPrice)
+                // OPT-10: Token estimation
+                lastPromptTokenEstimate = prompt.count / 4
+                sessionTokensUsed += lastPromptTokenEstimate
+                fullResponse = try await streamWithRecovery(prompt)
+            }
+
             lastResponseTime = Date().timeIntervalSince(start)
 
             let finalContent = isSuspiciousResponse(fullResponse)
@@ -148,33 +255,30 @@ class ChatViewModel {
                 : fullResponse
             updateMessage(at: msgIndex, content: finalContent, isStreaming: false)
 
-            // Auto-title conversation from first user message
-            if activeConversation?.messages.count == 2,
-               let title = activeConversation?.messages.first?.content {
-                activeConversation?.title = String(title.prefix(40))
-            }
+            autoTitleIfNeeded(from: trimmed)
 
-            // Generate contextual follow-up suggestions
             currentSuggestions = SuggestionEngine.suggestions(
-                for: fullResponse,
-                userMessage: trimmed,
-                walletHasBalance: (walletVM?.solBalance ?? 0) > 0
+                for: fullResponse, userMessage: trimmed, walletHasBalance: walletBalance > 0
             )
 
-            // Auto-refresh balance after balance-changing tool executions
             scheduleBalanceRefreshIfNeeded(for: fullResponse)
 
+            // OPT-02: Cache FM response (TTL 0 = no-cache for transactions)
+            let ttl = ResponseCache.ttl(for: intent)
+            if ttl > 0 {
+                await responseCache.set(finalContent, for: cacheKey, ttl: ttl)
+            }
+
         } catch AIError.contextWindowExceeded {
-            // Session was already reset at the top of sendMessage; reset again after overflow just in case.
-            aiSession.reset()
+            aiSession.resetFull()
             hasInjectedContext = false
+            turnsSinceReset = 0   // OPT-06: overflow kills continuity window
             showContextResetBannerBriefly()
-            // Tools may have executed successfully before overflow — refresh balance to pick up any changes.
             Task {
                 try? await Task.sleep(for: .seconds(4))
                 await walletVM?.refreshBalance()
             }
-            let retryPrompt = buildContextualPrompt(userText: trimmed)
+            let retryPrompt = buildContextualPrompt(userText: trimmed, preFetchedSOLPrice: preFetchedSOLPrice)
             do {
                 let start = Date()
                 let retryResponse = try await collectStream(retryPrompt)
@@ -183,14 +287,9 @@ class ChatViewModel {
                     ? "⚠️ Security Warning: The AI generated a response that appeared to request sensitive information. This response has been blocked."
                     : retryResponse
                 updateMessage(at: msgIndex, content: retryContent, isStreaming: false)
-                if activeConversation?.messages.count == 2,
-                   let title = activeConversation?.messages.first?.content {
-                    activeConversation?.title = String(title.prefix(40))
-                }
+                autoTitleIfNeeded(from: trimmed)
                 currentSuggestions = SuggestionEngine.suggestions(
-                    for: retryResponse,
-                    userMessage: trimmed,
-                    walletHasBalance: (walletVM?.solBalance ?? 0) > 0
+                    for: retryResponse, userMessage: trimmed, walletHasBalance: walletBalance > 0
                 )
             } catch {
                 updateMessage(at: msgIndex,
@@ -200,7 +299,7 @@ class ChatViewModel {
             }
             isProcessing = false
             persistActive()
-            aiSession.reset()   // clean slate for next user message
+            aiSession.resetFull()
             return
         } catch let genError as LanguageModelSession.GenerationError {
             confirmationHandlerRef?.clearPending()
@@ -240,7 +339,13 @@ class ChatViewModel {
 
         isProcessing = false
         persistActive()
-        aiSession.reset()   // clean slate for next user message
+
+        // OPT-06: Session continuity — only wipe the session after transactions.
+        // For generalChat the session survives to the next turn (up to maxChatTurnsBeforeReset).
+        // For directKnowledge the ephemeral session was already discarded; main session is clean.
+        if case .toolTransaction = intent {
+            aiSession.resetFull()
+        }
     }
 
     // MARK: - Conversation Management
@@ -249,12 +354,16 @@ class ChatViewModel {
         let convo = Conversation()
         conversations.insert(convo, at: 0)
         activeConversation = convo
-        aiSession.reset()
+        aiSession.resetFull()
         hasInjectedContext = false
+        turnsSinceReset = 0
         currentSuggestions = []
         lastResponseTime = nil
         sessionMessageCount = 0
         sessionTransactionCount = 0
+        lastPromptTokenEstimate = 0
+        sessionTokensUsed = 0
+        Task { await responseCache.invalidateAll() }
     }
 
     func deleteConversation(_ convo: Conversation) {
@@ -269,13 +378,19 @@ class ChatViewModel {
     // MARK: - Context Injection
 
     /// Prepends wallet + network context to the FIRST message of each session.
-    /// Subsequent messages are sent as-is (context already in transcript).
-    private func buildContextualPrompt(userText: String) -> String {
+    /// Subsequent messages are sent as-is (context already in the live session transcript).
+    /// - Parameter preFetchedSOLPrice: OPT-08 — fresh price from PriceService pre-fetch task.
+    ///   Used as fallback when walletVM.solUSDValue is nil, ensuring context block and
+    ///   PriceTool always agree on the current SOL price.
+    private func buildContextualPrompt(userText: String, preFetchedSOLPrice: Double? = nil) -> String {
         guard !hasInjectedContext,
               let wvm = walletVM,
               wvm.isWalletReady else { return userText }
 
         hasInjectedContext = true
+
+        // OPT-08: Prefer walletVM cached USD value; fall back to pre-fetched price.
+        let effectiveSOLUSD = wvm.solUSDValue ?? preFetchedSOLPrice
 
         let tokenSummary = wvm.tokenBalances.map {
             (symbol: $0.symbol, uiAmount: $0.uiAmount, usdValue: $0.usdValue)
@@ -283,11 +398,119 @@ class ChatViewModel {
         return AIInstructions.contextBlock(
             walletAddress: wvm.publicKey ?? "unknown",
             solBalance: wvm.solBalance,
-            solUSDValue: wvm.solUSDValue,
+            solUSDValue: effectiveSOLUSD,
             tokenBalances: tokenSummary,
             statsContext: statsVM?.contextSummary ?? "",
             userMessage: userText
         )
+    }
+
+    // MARK: - Knowledge Prompt (OPT-03)
+    // Minimal prompt for directKnowledge intent: no wallet data, no tool schemas.
+    // Token footprint: system block (~200) + knowledge snippet (~100-200) + question.
+
+    private func buildKnowledgePrompt(userText: String) -> String {
+        if let snippet = SolanaKnowledge.relevantSnippet(for: userText) {
+            return "[Knowledge: \(snippet)]\n\n\(userText)"
+        }
+        return userText
+    }
+
+    // MARK: - Direct Response Helpers (OPT-05)
+
+    /// Format wallet balance from WalletViewModel — bypasses FM entirely.
+    private func buildDirectBalanceResponse() -> String {
+        guard let wvm = walletVM, wvm.isWalletReady else {
+            return "Wallet is not connected yet. Please wait a moment and try again."
+        }
+        guard wvm.solBalance > 0 else {
+            return """
+            ⚠️ DEVNET: Your wallet is empty (0 SOL).
+
+            Say **"Get devnet SOL"** to receive a free airdrop instantly — no fees, no sign-up required.
+            """
+        }
+        var response = "✅ DEVNET: **Wallet Balance**\n"
+        let solStr = String(format: "%.6f SOL", wvm.solBalance)
+        if let usd = wvm.solUSDValue {
+            response += String(format: "• **SOL:** %@ ($%.2f USD)\n", solStr, usd)
+        } else {
+            response += "• **SOL:** \(solStr)\n"
+        }
+        if !wvm.tokenBalances.isEmpty {
+            response += "\n**SPL Tokens:**\n"
+            for token in wvm.tokenBalances.prefix(6) {
+                let amount = token.uiAmount >= 1_000
+                    ? String(format: "%.0f", token.uiAmount)
+                    : String(format: "%.4f", token.uiAmount)
+                if let usd = token.usdValue, usd > 0 {
+                    response += String(format: "• **%@:** %@ ($%.2f USD)\n", token.symbol, amount, usd)
+                } else {
+                    response += "• **\(token.symbol):** \(amount)\n"
+                }
+            }
+        }
+        return response
+    }
+
+    /// Fetch current token price from PriceService cache — bypasses FM entirely.
+    private func buildDirectPriceResponse(symbol: String) async -> String {
+        let sym = symbol.uppercased()
+        do {
+            if let price = try await PriceService.shared.getPrice(symbol: sym) {
+                return String(format: "✅ DEVNET: Current price of **%@**: $%.4f USD", sym, price)
+            }
+            return "⚠️ Could not fetch price for \(sym). The price API may be temporarily unavailable — try again in a moment."
+        } catch {
+            return "⚠️ Price lookup failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Finalize a non-FM (direct) response: update UI, cache, and complete turn.
+    private func finishDirectResponse(
+        _ response: String,
+        suggestions: [String]? = nil,
+        at msgIndex: Int,
+        query: String,
+        intent: QueryIntent,
+        walletBalance: Double
+    ) {
+        updateMessage(at: msgIndex, content: response, isStreaming: false)
+        if let explicit = suggestions {
+            currentSuggestions = explicit
+        } else {
+            currentSuggestions = SuggestionEngine.suggestions(
+                for: response, userMessage: query, walletHasBalance: walletBalance > 0
+            )
+        }
+        autoTitleIfNeeded(from: query)
+        let key = ResponseCache.makeKey(query: query, intent: intent, walletBalance: walletBalance)
+        let ttl = ResponseCache.ttl(for: intent)
+        if ttl > 0 {
+            Task { await responseCache.set(response, for: key, ttl: ttl) }
+        }
+        isProcessing = false
+        persistActive()
+    }
+
+    /// Collect streamed chunks from the knowledge-only ephemeral session.
+    private func collectKnowledgeStream(_ prompt: String, msgIndex: Int) async throws -> String {
+        var result = ""
+        for try await chunk in aiSession.streamKnowledge(prompt) {
+            result = chunk
+            if let count = activeConversation?.messages.count, count > 0 {
+                activeConversation?.messages[count - 1].content = result
+            }
+        }
+        return result
+    }
+
+    /// Auto-title the conversation from the first user message (first 40 chars).
+    private func autoTitleIfNeeded(from text: String) {
+        if activeConversation?.messages.count == 2,
+           let title = activeConversation?.messages.first?.content {
+            activeConversation?.title = String(title.prefix(40))
+        }
     }
 
     // MARK: - Safe message mutation
@@ -315,20 +538,20 @@ class ChatViewModel {
         } catch let genError as LanguageModelSession.GenerationError {
             switch genError {
             case .exceededContextWindowSize:
-                aiSession.reset()
+                aiSession.resetFull()
                 throw AIError.contextWindowExceeded
             case .unsupportedLanguageOrLocale:
                 throw genError  // hard stop — not recoverable by resetting context
             default:
                 if isContextWindowError(genError) {
-                    aiSession.reset()
+                    aiSession.resetFull()
                     throw AIError.contextWindowExceeded
                 }
                 throw genError
             }
         } catch {
             if isContextWindowError(error) {
-                aiSession.reset()
+                aiSession.resetFull()
                 throw AIError.contextWindowExceeded
             }
             throw error
@@ -397,6 +620,8 @@ class ChatViewModel {
         Task {
             try? await Task.sleep(for: delay)
             await walletVM.refreshBalance()
+            // OPT-02: Invalidate stale balance cache entries after confirmed balance change
+            await responseCache.invalidateBalance()
         }
     }
 
