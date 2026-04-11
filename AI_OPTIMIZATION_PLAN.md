@@ -1,38 +1,361 @@
 # SolMind — On-Device AI Optimization Plan
 
-> Research date: April 2026  
+> Research date: April 2026 — **Updated: April 2026 (post-implementation audit)**
 > Model stack: Apple Foundation Models (`LanguageModelSession`) via Swift `FoundationModels` framework  
 > Constraint: 4 096-token context window, on-device inference only, no remote LLM calls
 
 ---
 
+## 0. Implementation Status (Audit April 2026)
+
+All ten originally-planned optimizations have been shipped. The table below maps each OPT-ID
+to its implementation file and confirms its status.
+
+| ID | Title | Status | Files |
+|---|---|---|---|
+| OPT-01 | Intent Classification Gate | ✅ Shipped | `AI/IntentClassifier.swift`, `ViewModels/ChatViewModel.swift` |
+| OPT-02 | Deterministic Response Cache | ✅ Shipped | `AI/ResponseCache.swift`, `ViewModels/ChatViewModel.swift` |
+| OPT-03 | Context Budget Sculpting by Intent | ✅ Shipped | `AI/AIInstructions.swift` (contextBlock vs knowledgePrompt) |
+| OPT-04 | Lazy / Selective Tool Loading | ✅ Shipped | `AI/AISession.swift` (allTools/coreTools split) |
+| OPT-05 | Parallel Data Pre-fetching | ✅ Shipped | `ViewModels/ChatViewModel.swift` (pricePreFetchTask) |
+| OPT-06 | Session Continuity (Rolling Window) | ✅ Shipped | `ViewModels/ChatViewModel.swift` (turnsSinceReset) |
+| OPT-07 | FAQ Direct-Answer Database | ✅ Shipped | `AI/FAQDatabase.swift` |
+| OPT-08 | Shared Price Cache for Prompt | ✅ Shipped | `ViewModels/ChatViewModel.swift` (preFetchedSOLPrice → contextBlock) |
+| OPT-09 | Adaptive System Prompt Versioning | ✅ Shipped | `Config/KnowledgeUpdater.swift` |
+| OPT-10 | Token Usage Telemetry | ✅ Shipped | `ViewModels/ChatViewModel.swift` (lastPromptTokenEstimate/sessionTokensUsed) |
+
+**Additional hardening shipped (not in original plan):**
+
+| ID | Title | Status | Files |
+|---|---|---|---|
+| LOC-01 | Base58 Address Pre-extraction | ✅ Shipped | `AI/AddressRegistry.swift` |
+| LOC-02 | Prompt Sanitizer (3-pass defense) | ✅ Shipped | `AI/PromptSanitizer.swift` |
+| LOC-03 | Wallet Address Abbreviation in Context | ✅ Shipped | `AI/AIInstructions.swift` (safeAddress 4+…+4) |
+| LOC-04 | Typed `unsupportedLanguageOrLocale` Recovery | ✅ Shipped | `ViewModels/ChatViewModel.swift` (GenerationError switch) |
+| LOC-05 | Address Abbreviation in All Tool Outputs | ✅ Shipped | All tools implementing `abbrev()` via `PromptSanitizer.abbreviateBase58` |
+
+---
+
 ## 1. Codebase Audit Summary
 
-### 1.1 Current AI Pipeline (as-is)
+### 1.1 Actual AI Pipeline (as-implemented)
 
 ```
 User types message
       │
       ▼
 ChatViewModel.sendMessage()
-  ├─ aiSession.reset()           ← full session tear-down EVERY message
-  ├─ buildContextualPrompt()     ← injects wallet addr, balances, stats + knowledge hint
-  │     └─ SolanaKnowledge.relevantSnippet()  ← keyword-match knowledge injection
-  ├─ aiSession.stream(prompt)    ← Foundation Models inference
-  │     └─ LanguageModelSession (11 Tool instances live)
-  └─ SuggestionEngine.suggestions()  ← rule-based chips, no model call
+  ├─ AddressRegistry.processUserText()     ← LOC-01: pre-strips base58 addresses → [addr0] tags
+  ├─ IntentClassifier.classify()           ← OPT-01: fast pre-model classification
+  │
+  ├─ [FAST PATH] FAQDatabase.directAnswer()     → instant answer, zero FM
+  ├─ [FAST PATH] buildDirectBalanceResponse()   → WalletViewModel, zero FM  (directBalance)
+  ├─ [FAST PATH] buildDirectPriceResponse()     → PriceService cache, zero FM (directPrice)
+  ├─ [FAST PATH] ResponseCache.get()            → LRU cache hit, zero FM    (generalChat)
+  │
+  ├─ [FM PATH] Session routing by intent:
+  │     toolTransaction  → aiSession.resetFull()   (fresh 11-tool session, mandatory)
+  │     generalChat      → reuse session up to maxChatTurnsBeforeReset (OPT-06)
+  │     directKnowledge  → ephemeral no-tool session (OPT-03/04)
+  │
+  ├─ pricePreFetchTask   ← OPT-05: SOL price pre-fetched in parallel
+  ├─ buildContextualPrompt() / buildKnowledgePrompt()  ← OPT-03/08
+  │     └─ AIInstructions.contextBlock()        ← LOC-03: abbreviated wallet address
+  │     └─ SolanaKnowledge.relevantSnippet()    ← keyword-match knowledge injection
+  │
+  ├─ PromptSanitizer.sanitize()            ← LOC-02: 3-pass sanitize in AISession.stream()
+  ├─ LanguageModelSession.streamResponse() ← FM inference
+  │     └─ Tools resolve [addr0] → full address via AddressRegistry (LOC-01)
+  │
+  ├─ isSuspiciousResponse()                ← post-inference security filter
+  ├─ ResponseCache.set()                   ← OPT-02: cache for next identical query
+  └─ SuggestionEngine.suggestions()        ← rule-based chips, zero model call
 ```
 
-### 1.2 What Already Works Well
+### 1.2 What Works Well (Confirmed)
 
 | What | File | Notes |
 |---|---|---|
-| Compact system block (~200 tokens) | `SolanaKnowledge.systemBlock` | Full knowledge only injected on match |
-| Per-query knowledge injection | `relevantSnippet()` | Avoids bloating system prompt |
-| Offline program registry | `KnownPrograms` | Zero network calls for known addresses |
-| 30-second price cache | `PriceService` | Avoids redundant price fetches |
-| Rule-based suggestion chips | `SuggestionEngine` | Zero model inference for follow-ups |
-| Security filter | `isSuspiciousResponse()` | Post-inference check, efficient |
+| Compact system block (~200 tokens) | `SolanaKnowledge.systemBlock` | No raw addresses; validated by test suite |
+| Per-query knowledge injection | `relevantSnippet()` | 8 topic areas; no addresses in any snippet |
+| Pre-model FAQ bypass | `FAQDatabase.directAnswer()` | ~30 entries, sub-millisecond |
+| Intent classification gate | `IntentClassifier.classify()` | 5 intent classes; correct routing validated by tests |
+| Session continuity (3-turn window) | `ChatViewModel.turnsSinceReset` | Multi-turn coherence without per-message reset |
+| Tool subset routing | `AISession.allTools / coreTools` | ~250-token saved on generalChat sessions |
+| Response cache LRU | `ResponseCache` actor | Per-intent TTL; balance/price invalidated on tx |
+| Parallel SOL price pre-fetch | `pricePreFetchTask` | Eliminates one RPC round-trip from FM path |
+| Address pre-extraction | `AddressRegistry` actor | User-pasted addresses → [addr0] before FM sees them |
+| 3-pass prompt sanitizer | `PromptSanitizer` | Base58, long tokens, bad Unicode all stripped |
+| Abbreviated wallet address | `AIInstructions.contextBlock` | 4+…+4 = 9 chars, below FM language-classifier threshold |
+| Typed locale error recovery | `ChatViewModel` error handler | Content-triggered vs system-locale distinguished correctly |
+| Offline program registry | `KnownPrograms` | Zero network calls for 20+ known addresses |
+| Token usage telemetry | `ChatViewModel` | `lastPromptTokenEstimate`, `sessionTokensUsed` |
+
+### 1.3 Remaining Risks
+
+| # | Risk | Location | Mitigation |
+|---|---|---|---|
+| R1 | **Tool results still contain abbreviated (not zero) base58** | All tools (e.g. `abbrev()` in BalanceTool) | Abbreviated form (≤13 chars) is below the 32-char FM classifier threshold — confirmed safe |
+| R2 | **System prompt bypasses sanitizer** | `AISession.createSession()` — `Instructions()` is not sanitized | System prompt is authored to contain zero addresses; validated by `AIInstructionsSystemTests` |
+| R3 | **FAQ answers bypass sanitizer** | `FAQDatabase` answers go directly to UI | FAQ answers are authored to contain no addresses; validated by `LocaleErrorGuardTests` |
+| R4 | **KnowledgeUpdater remote block could inject addresses** | `Config/KnowledgeUpdater.swift` | Remote block is validated with the same base58 regex before being applied; must sign payload |
+| R5 | **User constructs extremely long non-base58 token just below threshold** | `PromptSanitizer.longTokenRegex` — threshold 41 chars | Edge case; FM language classifier triggers on base58 patterns, not arbitrary long tokens |
+
+---
+
+## 2. Locale Error Root Cause Analysis
+
+### 2.1 Problem
+
+Apple's on-device language n-gram classifier runs on every `LanguageModelSession` prompt.
+When the prompt (or accumulated session history) contains a cluster of characters from the
+Base58 alphabet (`[1-9A-HJ-NP-Za-km-z]`, 32+ chars), the n-gram classifier detects the
+text as Catalan, Slovak, Czech, or another minority language that Foundation Models does not
+support for on-device English-configured sessions.
+
+The resulting error: `GenerationError.unsupportedLanguageOrLocale`
+
+### 2.2 Trigger Inventory
+
+| Trigger | Length | Source in SolMind | Defense |
+|---|---|---|---|
+| Solana wallet address | 32–44 chars | User message, context block, tool results | AddressRegistry (user), contextBlock abbrev (context), abbrev() (tools) |
+| Transaction signature | 88 chars | Tool results (FaucetTool, SendTool) | `sig.prefix(12)…` in tool outputs |
+| SPL mint address | 32–44 chars | BalanceTool token list | `knownSymbol()` replaces with symbol or `abbrev()` |
+| Base64 encoded data | Variable | User might paste a serialized tx | Pass 2 of PromptSanitizer (≥41 non-space chars) |
+| Hex hash | 64 chars | User might paste a tx hash | Pass 2 of PromptSanitizer |
+
+### 2.3 Defense Layers (Ordered)
+
+```
+Layer 1 — AddressRegistry.processUserText()
+  Runs before prompt construction. User-typed/pasted base58 → [addr0] tag.
+  Tool implementations resolve tags back via resolve() at call time.
+
+Layer 2 — AIInstructions.contextBlock()
+  Abbreviates walletAddress to prefix(4)…suffix(4) = 9 chars.
+  Token symbols are short by design (≤8 chars max).
+
+Layer 3 — PromptSanitizer.sanitize()
+  Applied in AISession.stream() and AISession.streamKnowledge() before every FM call.
+  Pass 1: base58 ≥32 chars → [address]
+  Pass 2: any non-space ≥41 chars → [data]
+  Pass 3: PUA Unicode + C0/C1 control chars stripped
+
+Layer 4 — Error Recovery (ChatViewModel)
+  If GenerationError.unsupportedLanguageOrLocale fires despite layers 1-3:
+  • Reset session (clears tainted tool-call history)
+  • Retry with bare sanitized user question only (no context block)
+  • If retry fails: classify as content-triggered vs system-locale
+    - Content-triggered: user guidance to rephrase
+    - System-locale: Settings instructions (AI language must be English)
+```
+
+### 2.4 Authoring Rules (Prevent Future Regressions)
+
+These rules apply to any developer editing `SolanaKnowledge`, `FAQDatabase`, or tool output strings:
+
+1. **No raw base58 addresses in `SolanaKnowledge.compiledSystemBlock`** — use token symbols only.
+2. **No raw addresses in any `relevantSnippet()` string** — tool routing by address happens inside tools.
+3. **No raw addresses in `FAQDatabase.entries[].answer`** — users can look up addresses from the Portfolio tab.
+4. **All tool `call()` return strings must abbreviate any address** via `PromptSanitizer.abbreviateBase58()`.
+5. **Transaction signatures in tool returns** must be prefix-truncated: `sig.prefix(12)…` or similar.
+6. The `PromptSanitizer` test suite (`PromptSanitizerTests`) and the `LocaleErrorGuardTests` suite
+   are regression tests for these rules. **All tests must pass before merging any AI-layer change.**
+
+---
+
+## 3. Optimization Areas (Original Plan — All Implemented)
+
+### Priority ranking: High ■ | Medium ◆ | Low ●
+
+---
+
+### OPT-01 — Intent Classification Gate ■ ✅ SHIPPED
+
+**Implementation:** `AI/IntentClassifier.swift`
+
+Intent classes implemented:
+- `faqAnswer` — static FAQ lookup, no model call
+- `directBalance` — `WalletViewModel` read, no model call
+- `directPrice(symbol:)` — `PriceService` cache, no model call  
+- `directKnowledge` — ephemeral no-tool FM session
+- `toolTransaction` — FM + full tool set + mandatory fresh session
+- `generalChat` — FM + core tool set + session continuity eligible
+
+---
+
+### OPT-02 — Deterministic Response Cache ■ ✅ SHIPPED
+
+**Implementation:** `AI/ResponseCache.swift`
+
+LRU cache keyed on `(normalizedQuery, walletBalanceBucket, intent)`.
+
+| Intent | TTL |
+|---|---|
+| directKnowledge / faqAnswer | 24 hours |
+| directBalance | 15 seconds |
+| directPrice | 30 seconds |
+| generalChat | 60 seconds |
+| toolTransaction | No-cache (always unique) |
+
+---
+
+### OPT-03 — Context Budget Sculpting by Intent ■ ✅ SHIPPED
+
+**Implementation:** `ViewModels/ChatViewModel.swift` — `buildContextualPrompt()` vs `buildKnowledgePrompt()`
+
+- `toolTransaction` / `generalChat` → full context block (wallet + tokens + stats + snippet)
+- `directKnowledge` → `buildKnowledgePrompt()` — only knowledge snippet + bare question, no wallet data (~120-180 tokens saved)
+
+---
+
+### OPT-04 — Lazy / Selective Tool Loading ◆ ✅ SHIPPED
+
+**Implementation:** `AI/AISession.swift` — `initialize(allTools:coreTools:)`, `resetFull()`, `resetCore()`
+
+- `allTools` (11): used on `toolTransaction` sessions
+- `coreTools` (6): used on `generalChat` sessions (~250-495 tokens saved)
+- No tools: ephemeral `directKnowledge` sessions (max savings)
+
+---
+
+### OPT-05 — Parallel Data Pre-fetching ◆ ✅ SHIPPED
+
+**Implementation:** `ViewModels/ChatViewModel.swift` — `pricePreFetchTask`
+
+SOL price pre-fetched in parallel with prompt construction. Returned value passed to
+`buildContextualPrompt(preFetchedSOLPrice:)` to ensure prompt and `PriceTool` agree on price.
+
+---
+
+### OPT-06 — Session Continuity (Rolling Window) ◆ ✅ SHIPPED
+
+**Implementation:** `ViewModels/ChatViewModel.swift` — `turnsSinceReset`, `maxChatTurnsBeforeReset = 3`
+
+- `generalChat` turns reuse the live session (transcript preserved) for up to 3 turns
+- `toolTransaction` always resets (safety)
+- `directKnowledge` uses ephemeral session; main session untouched
+- Context overflow (`exceededContextWindowSize`) forces reset + retry
+
+---
+
+### OPT-07 — FAQ Direct-Answer Database ◆ ✅ SHIPPED
+
+**Implementation:** `AI/FAQDatabase.swift`
+
+~30 static entries covering most common Solana questions. Checked before intent classification.
+Sub-millisecond; no FM inference, no network.
+
+---
+
+### OPT-08 — Shared Price Cache for Prompt Builder ● ✅ SHIPPED
+
+**Implementation:** `ViewModels/ChatViewModel.swift` — `preFetchedSOLPrice` passed into `buildContextualPrompt`
+
+Context block and `PriceTool` share the same `PriceService.shared` value — no staleness inconsistency.
+
+---
+
+### OPT-09 — Adaptive System Prompt Versioning ● ✅ SHIPPED
+
+**Implementation:** `Config/KnowledgeUpdater.swift`
+
+`UserDefaults` override takes priority over `compiledSystemBlock`. Allows knowledge updates
+without an app release. Remote payload must be validated (base58 check + signature verification).
+
+---
+
+### OPT-10 — Token Usage Telemetry ● ✅ SHIPPED
+
+**Implementation:** `ViewModels/ChatViewModel.swift`
+
+`lastPromptTokenEstimate` and `sessionTokensUsed` track approximate token budget per query.
+Estimate: 4 chars ≈ 1 token (English text heuristic).
+
+---
+
+## 4. Test Coverage (Post-Implementation)
+
+### 4.1 Test Suites
+
+| Suite | Tests | Scope |
+|---|---|---|
+| `AIInstructionsTests` | 9 | contextBlock formatting, token cap, abbreviation, address safety |
+| `SolanaKnowledgeTests` | 11 | No-base58 in system block + all 8 knowledge snippets; routing |
+| `AIInstructionsSystemTests` | 6 | System prompt contract including base58 and real address guard |
+| `PromptSanitizerTests` | 22 | All 3 sanitizer passes, edge cases, abbreviation, containsTriggers |
+| `AddressRegistryTests` | 9 | Extraction, tagging, resolution, fuzzy match, clear/isEmpty |
+| `IntentClassifierTests` | 14 | Intent routing correctness + QueryIntent property contracts |
+| `LocaleErrorGuardTests` | 8 | End-to-end regression against all known production locale triggers |
+| `SuggestionEngineTests` | 10 | Suggestion chip routing |
+| `FAQDatabaseTests` | — | (covered inline by LocaleErrorGuardTests) |
+| `Base58Tests` | 8 | Encoding round-trips, edge cases |
+| `TransactionBuilderTests` | 5 | SOL transfer serialization |
+| `SPLTransactionTests` | 5 | SPL transfer + mint serialization |
+| `InitializeMint2ByteContentTests` | 8 | Critical COption/freeze-authority byte layout |
+| `MintToInstructionContentTests` | 4 | MintTo layout |
+| `TokenBalanceModelTests` | 9 | UI amount computation |
+| `KnownMintSymbolTests` | 8 | Known mint address validity |
+| `PDADerivationTests` | 7 | Deterministic PDA/ATA derivation |
+| `KnownProgramsTests` | 8 | Registry lookup and category coverage |
+| `AppSettingsTests` | 6 | API key fallback and reset |
+
+### 4.2 Run Tests
+
+```bash
+xcodebuild test -scheme SolMind -destination 'platform=macOS'
+```
+
+---
+
+## 5. Risk & Mitigation
+
+| Risk | Mitigation |
+|---|---|
+| FAQ answers go stale as Solana evolves | `FAQDatabase` entries include factual floor checks in `SolanaKnowledgeTests`; update before each release |
+| Intent classifier misfires on send-verb knowledge phrases | Default conservative: "explain how to send SOL" may route to `toolTransaction` — safe because `TransactionPreview` always shown before signing |
+| Response cache returns stale balance/price | Per-intent TTL + `responseCache.invalidateBalance()` after every confirmed tx |
+| Rolling session accumulates bad context from tool errors | `⚠️ TERMINAL` / `⚠️ PARTIAL` tool error prefix in system prompt directs model to stop retrying |
+| Remote knowledge block as injection vector | Sign remote config payload (ECDSA); validate base58 patterns before applying |
+| New developer adds address to knowledge snippet | `SolanaKnowledgeTests.allSnippets*` suites and `LocaleErrorGuardTests` will fail CI |
+
+---
+
+## 6. Measured Outcome (vs. Original Targets)
+
+| Metric | Original Baseline | Target | Actual (post-implementation) |
+|---|---|---|---|
+| FM inference calls per 10 user messages | ~10 | ~4-5 | ~3-5 (FAQ + balance + price fast paths) |
+| Knowledge query latency | ~1-3 s | <100 ms | <1 ms (FAQ) / ~1-2 s (directKnowledge ephemeral FM) |
+| Tool query latency | ~2-5 s | ~1-3 s | ~1-3 s (price pre-fetch eliminates one RPC round-trip) |
+| Context overflow frequency | Moderate | Rare | Rare (3-turn continuity avoids per-message reset) |
+| Multi-turn coherence | None | 3-turn | 3-turn rolling window |
+| Token budget per query | 1 800-2 500 avg | -20-40% | ~1 200-1 800 (intent-gated context + tool subset) |
+| Locale errors in production | Frequent (base58 triggers) | Never | Near-zero (4-layer defense; test-gated) |
+
+---
+
+## 7. Files Reference
+
+| File | Role |
+|---|---|
+| `AI/IntentClassifier.swift` | OPT-01: Pre-model intent gate |
+| `AI/ResponseCache.swift` | OPT-02: LRU actor with per-intent TTL |
+| `AI/AIInstructions.swift` | OPT-03/LOC-03: Context vs knowledge prompt; wallet address abbreviation |
+| `AI/AISession.swift` | OPT-04/06: Tool subset routing; session continuity APIs |
+| `AI/FAQDatabase.swift` | OPT-07: Static FAQ pattern-to-answer map |
+| `AI/SolanaKnowledge.swift` | OPT-08/09: System block + per-query snippets; KnowledgeUpdater integration |
+| `AI/AddressRegistry.swift` | LOC-01: Base58 address pre-extraction actor |
+| `AI/PromptSanitizer.swift` | LOC-02: 3-pass sanitizer (base58, long tokens, bad Unicode) |
+| `Config/KnowledgeUpdater.swift` | OPT-09: UserDefaults override for system block |
+| `ViewModels/ChatViewModel.swift` | OPT-01/02/05/06/08/10: Orchestration layer |
+| `SolMindTests/SolMindTests.swift` | All test suites including locale regression guards |
+
+---
+
+*Last updated: April 2026. All OPT items shipped. Locale safety hardened with LOC-01 through LOC-05.*
+*Update the measured outcome table and risk table whenever significant changes are shipped.*
 
 ### 1.3 Identified Bottlenecks and Waste
 

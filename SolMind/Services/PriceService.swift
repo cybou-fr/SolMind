@@ -28,6 +28,18 @@ actor PriceService {
         "ETH":  "ethereum"
     ]
 
+    // MARK: - Public API
+
+    /// Read from in-memory cache without a network call (non-throwing).
+    /// Returns nil if the symbol has never been fetched or the cached value has expired.
+    /// Prefer this in context-block builders that should not trigger a network fetch.
+    func cachedPrice(for symbol: String) async -> Double? {
+        let key = symbol.uppercased()
+        guard let cached = cache[key],
+              Date().timeIntervalSince(cached.fetchedAt) < cacheTTL else { return nil }
+        return cached.price
+    }
+
     func getPrice(symbol: String) async throws -> Double? {
         let key = symbol.uppercased()
 

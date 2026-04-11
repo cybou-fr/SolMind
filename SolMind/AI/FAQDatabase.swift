@@ -428,6 +428,251 @@ enum FAQDatabase {
             """,
             suggestions: ["What is Jupiter?", "What is Orca?", "How do I swap tokens?"]
         ),
+
+        // ── Gulf Stream ──────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is gulf stream", "gulf stream solana", "mempool solana",
+                       "solana mempool", "have a mempool", "does solana have",
+                       "how does forwarding work", "no mempool"],
+            answer: """
+            ✅ DEVNET: **Gulf Stream — Mempool-less Transaction Forwarding**
+
+            Gulf Stream replaces the traditional mempool with forward-looking transaction caching.
+
+            • Transactions are forwarded directly to **upcoming validator leaders** before their slot
+            • Validators can pre-load transactions into memory, reducing confirmation latency
+            • Result: sub-second transaction processing with **zero mempool congestion**
+            • Contrast with Ethereum: transactions wait in a shared mempool (gas wars, MEV bots)
+
+            Solana has **no gas wars** — fees are fixed and tiny (~$0.000025 per tx).
+            """,
+            suggestions: ["What is Proof of History?", "What is Turbine?", "How fast is Solana?"]
+        ),
+
+        // ── Turbine ──────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is turbine", "turbine block propagation", "erasure coding solana",
+                       "how blocks propagate", "block propagation"],
+            answer: """
+            ✅ DEVNET: **Turbine — Block Propagation**
+
+            Turbine is Solana's block propagation protocol, inspired by BitTorrent.
+
+            • Breaks blocks into small **shreds** (erasure-coded packets)
+            • Shreds cascade through a tree of validators — no single point of failure
+            • **Erasure coding** means up to 1/3 of shreds can be lost and the block still reconstructs
+            • Enables fast propagation to 2,000+ validators with minimal bandwidth per node
+
+            This is how Solana achieves high throughput without requiring every node to download the full block from the leader.
+            """,
+            suggestions: ["What is Gulf Stream?", "What is Proof of History?", "What is Firedancer?"]
+        ),
+
+        // ── Tower BFT ────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is tower bft", "tower bft", "solana consensus", "how consensus works",
+                       "what is bft", "byzantine fault"],
+            answer: """
+            ✅ DEVNET: **Tower BFT — Solana's Consensus**
+
+            Tower BFT is Solana's Proof of Stake consensus mechanism, optimized using Proof of History.
+
+            • Based on **PBFT** (Practical Byzantine Fault Tolerance)
+            • Validators vote on the state of the blockchain using **PoH-timestamped votes**
+            • Votes have an **exponentially increasing lockout** — the longer you commit, the longer you're locked to that fork
+            • Achieves finality in ~12.8 seconds on average
+            • Tolerates up to 1/3 of validators being faulty or malicious
+
+            Combined with PoH, Tower BFT lets validators agree on order without round-trip coordination.
+            """,
+            suggestions: ["What is Proof of History?", "What is Sealevel?", "What is a validator?"]
+        ),
+
+        // ── Validators ───────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is a validator", "what are validators", "how validators work",
+                       "validators work", "how to become a validator", "solana validators", "validator node"],
+            answer: """
+            ✅ DEVNET: **Solana Validators**
+
+            Validators are nodes that process transactions and vote on the blockchain state.
+
+            • **2,000+ active validators** on mainnet
+            • **Leader rotation**: each validator takes turns producing blocks (one slot = ~400ms)
+            • **Staking**: SOL holders delegate to validators and earn ~7–8% APY
+            • **Commission**: validators keep 0–10% of rewards (choose validators with <10%)
+            • **Hardware**: requires high-performance server (1TB+ NVMe SSD, 256GB RAM, fast CPU)
+
+            To choose a validator for staking: prefer low commission, high uptime, no freeze history. Tools: **validators.app**, **solanabeach.io**.
+            """,
+            suggestions: ["How do I stake SOL?", "What is liquid staking?", "What is Tower BFT?"]
+        ),
+
+        // ── Orca ─────────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is orca", "orca dex", "orca whirlpool", "tell me about orca",
+                       "how does orca work"],
+            answer: """
+            ✅ DEVNET: **Orca**
+
+            Orca is a developer-friendly Solana DEX known for its concentrated liquidity pools.
+
+            • **Whirlpools** — CLMM (Concentrated Liquidity Market Maker), capital-efficient
+            • **ORCA** — governance and fee-sharing token
+            • Clean SDK and documentation — popular with builders
+            • Integrated with Jupiter for best-route aggregation
+
+            ⚠️ DEVNET: Orca pools run on mainnet only. Devnet swaps via Jupiter/Orca will fail.
+            """,
+            suggestions: ["What is Jupiter?", "What is Raydium?", "Swap SOL for USDC"]
+        ),
+
+        // ── Kamino ───────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is kamino", "kamino finance", "automated liquidity",
+                       "kamino lending", "tell me about kamino"],
+            answer: """
+            ✅ DEVNET: **Kamino Finance**
+
+            Kamino is Solana's leading automated liquidity and lending protocol.
+
+            • **Automated LP vaults** — auto-rebalances positions in Orca/Raydium CLMMs
+            • **Lending market** — supply/borrow USDC, SOL, LSTs with competitive rates
+            • **Leveraged yield** — borrow against LSTs to amplify staking yields
+            • **KMNO** — governance token, distributes protocol fees to stakers
+            • LSTs (mSOL, jitoSOL, bSOL) accepted as collateral
+
+            ⚠️ DEVNET: Kamino is mainnet-only.
+            """,
+            suggestions: ["What is MarginFi?", "What is liquid staking?", "What is DeFi on Solana?"]
+        ),
+
+        // ── MarginFi ─────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is marginfi", "margin fi", "marginfi lending", "tell me about marginfi",
+                       "flash loans"],
+            answer: """
+            ✅ DEVNET: **MarginFi v2**
+
+            MarginFi is an isolated-risk lending protocol on Solana.
+
+            • **Isolated pools** — each asset pair is risk-isolated (failure doesn't cascade)
+            • **Flash loans** — borrow and repay in a single transaction (no collateral needed)
+            • **MRGN** — governance token
+            • Accepts SOL, USDC, LSTs as collateral
+            • Competitive supply/borrow rates; lower liquidation risk than cross-margin protocols
+
+            ⚠️ DEVNET: MarginFi is mainnet-only.
+            """,
+            suggestions: ["What is Kamino?", "What is liquid staking?", "What is DeFi on Solana?"]
+        ),
+
+        // ── Marinade ─────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is marinade", "marinade staking", "what is mnde",
+                       "tell me about marinade", "marinade native", "marinade liquid"],
+            answer: """
+            ✅ DEVNET: **Marinade Finance**
+
+            Marinade is Solana's largest liquid staking protocol.
+
+            • **mSOL** — liquid staking token, ~7% APY, no lockup
+            • Distributes stake across 100+ validators (decentralization)
+            • **Marinade Native** — native stake with same APY, no smart contract risk
+            • **MNDE** — governance token, earns from protocol fees
+            • mSOL usable as collateral on Kamino, MarginFi, and other protocols
+
+            Marinade pioneered liquid staking on Solana and remains the #1 protocol by TVL.
+            """,
+            suggestions: ["What is jitoSOL?", "How do I stake SOL?", "What is liquid staking?"]
+        ),
+
+        // ── Compressed NFTs ──────────────────────────────────────────────────────
+        .init(
+            patterns: ["what are compressed nfts", "what is a compressed nft", "cnft",
+                       "compressed nft vs regular", "bubblegum nft", "how to mint compressed",
+                       "compressed nft cost", "how cheap are compressed nfts"],
+            answer: """
+            ✅ DEVNET: **Compressed NFTs (cNFTs)**
+
+            Compressed NFTs store metadata in a Merkle tree on-chain instead of individual accounts — dramatically reducing cost.
+
+            | | Regular NFT | Compressed NFT |
+            |---|---|---|
+            | **Cost to mint** | ~0.01 SOL | ~0.000005 SOL |
+            | **Storage** | Separate account per NFT | Merkle tree |
+            | **Program** | Metaplex Token Metadata | Bubblegum + Account Compression |
+            | **API** | Standard RPC | Helius DAS API |
+
+            SolMind uses **Helius minting API** for cNFTs — say "Mint me an NFT" to try it. Helius minting is free on devnet.
+            """,
+            suggestions: ["Mint me an NFT", "View my NFT gallery", "What is Metaplex?"]
+        ),
+
+        // ── Wallets ──────────────────────────────────────────────────────────────
+        .init(
+            patterns: ["what is phantom", "phantom wallet", "what is solflare", "solana wallet",
+                       "best wallet", "what wallet should i use", "backpack wallet",
+                       "what wallets work with solana"],
+            answer: """
+            ✅ DEVNET: **Solana Wallets**
+
+            Popular Solana wallets:
+
+            | Wallet | Platform | Key Feature |
+            |---|---|---|
+            | **Phantom** | Browser + mobile | Most popular, built-in swap |
+            | **Solflare** | Browser + mobile | Advanced staking UI |
+            | **Backpack** | Browser + mobile | xNFT apps, bespoke UX |
+            | **OKX Wallet** | Browser + mobile | Cross-chain support |
+            | **SolMind** | macOS | AI-powered, on-device AI inference |
+
+            **SolMind** stores keys in Apple Keychain — encrypted, sandboxed, protected by Touch/Face ID. No keys ever leave your device.
+            """,
+            suggestions: ["What's my balance?", "How is my wallet secured?", "What is devnet?"]
+        ),
+
+        // ── What can I do with SOL ────────────────────────────────────────────────
+        .init(
+            patterns: ["what can i do with sol", "what can i do with solana", "how to use sol",
+                       "use cases for sol", "sol use case", "what do people use sol for"],
+            answer: """
+            ✅ DEVNET: **What can you do with SOL?**
+
+            SOL is the native currency of Solana. With SolMind on devnet you can:
+
+            • **Get free SOL** — say "Get devnet SOL" for an instant airdrop
+            • **Send SOL** — send to any Solana address in seconds
+            • **Swap tokens** — convert SOL ↔ USDC, USDT, BONK, JUP and more (via Jupiter on mainnet)
+            • **Mint NFTs** — create compressed NFTs via Helius for almost nothing
+            • **Create tokens** — deploy your own SPL fungible token (~0.005 SOL)
+            • **Stake** — delegate to validators and earn ~7–8% APY (mainnet)
+            • **DeFi** — lend, borrow, provide liquidity, earn yield (mainnet, Kamino/MarginFi/Marinade)
+
+            Everything works on devnet — zero real money required for testing!
+            """,
+            suggestions: ["Get devnet SOL", "Mint me an NFT", "What's my balance?", "Swap SOL for USDC"]
+        ),
+
+        // ── OpenBook / order books ───────────────────────────────────────────────
+        .init(
+            patterns: ["what is openbook", "openbook dex", "order book solana",
+                       "clob solana", "serum successor", "what happened to serum"],
+            answer: """
+            ✅ DEVNET: **OpenBook v2**
+
+            OpenBook v2 is Solana's primary on-chain Central Limit Order Book (CLOB) DEX, the successor to the defunct Serum.
+
+            • **CLOB** — maker/taker model with real bids and asks (vs AMMs)
+            • Permissionless market creation — anyone can list any token pair
+            • Built after FTX/Serum collapse — community-governed, no central key holders
+            • Used by Jupiter as one of its liquidity sources for optimal routing
+            • **Phoenix** is an alternative permissionless CLOB on Solana
+
+            ⚠️ DEVNET: OpenBook markets are mainnet-only.
+            """,
+            suggestions: ["What is Jupiter?", "What is Raydium?", "What is DeFi on Solana?"]
+        ),
     ]
 
     // MARK: - Lookup

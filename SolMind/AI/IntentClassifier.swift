@@ -116,6 +116,11 @@ enum IntentClassifier {
            q.contains("my transactions") || q.contains("show tx") ||
            q.contains("tx history") || q.contains("transaction list") { return true }
 
+        // NFT gallery / portfolio viewing — requires NFT tool call
+        if q.contains("my nft") || q.contains("show nft") || q.contains("view nft") ||
+           q.contains("nft gallery") || q.contains("my collection") ||
+           q.contains("see my nft") || q.contains("list my nft") { return true }
+
         return false
     }
 
@@ -126,7 +131,8 @@ enum IntentClassifier {
             "my balance", "check balance", "show balance", "view balance",
             "how much sol", "how much do i have", "how many sol",
             "what's my balance", "what is my balance", "my sol balance",
-            "my wallet balance", "current balance", "wallet balance"
+            "my wallet balance", "current balance", "wallet balance",
+            "my portfolio", "my tokens", "token balance", "portfolio balance"
         ]
         return phrases.contains { q.contains($0) }
     }
@@ -179,7 +185,14 @@ enum IntentClassifier {
             "compressed nft", "metaplex", "bubblegum", "magic eden",
             "wallet", "fee", "lamport", "rent", "pda", "cpi",
             "token-2022", "helius", "airdrop",
-            "consensus", "bft", "block time", "tps", "transaction"
+            "consensus", "bft", "block time", "tps", "transaction",
+            // New: Solana architecture layers
+            "gulf stream", "turbine", "tower bft", "tower bft", "erasure",
+            // New: protocols & DEXes
+            "kamino", "marginfi", "openbook", "phoenix", "marinade native",
+            "compressed", "cnft", "bubblegum",
+            // New: use-case / how-to leads
+            "what can i do", "how do i use", "how to use solmind"
         ]
         return topics.contains { q.contains($0) }
     }

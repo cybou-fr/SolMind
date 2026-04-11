@@ -121,12 +121,25 @@ final class KnowledgeUpdater {
             // Safety: reject if the payload looks like a prompt injection attempt
             // (i.e., contains adversarial instruction fragments targeting the AI)
             guard !looksLikeInjection(block) else { return }
+            // Safety: reject if the block contains a raw base58 string ≥32 chars —
+            // these trigger Apple's n-gram locale classifier and cause
+            // GenerationError.unsupportedLanguageOrLocale on every subsequent session.
+            guard !containsBase58Trigger(block) else { return }
             overrideSystemBlock = block
             UserDefaults.standard.set(block, forKey: Key.systemBlock)
         }
 
         remoteVersion = payload.version
         UserDefaults.standard.set(payload.version, forKey: Key.version)
+    }
+
+    // MARK: - Base58 Locale Trigger Guard
+
+    /// Reject remote payloads that contain a base58 string ≥ 32 chars.
+    /// Such strings trigger Apple's n-gram locale classifier and produce
+    /// GenerationError.unsupportedLanguageOrLocale on every subsequent FM session.
+    private func containsBase58Trigger(_ text: String) -> Bool {
+        text.range(of: "[1-9A-HJ-NP-Za-km-z]{32,}", options: .regularExpression) != nil
     }
 
     // MARK: - Injection Guard
