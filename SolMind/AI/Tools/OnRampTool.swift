@@ -49,11 +49,11 @@ struct OnRampTool: Tool {
         // Open in browser
         openURL(url)
 
+        // Omit full wallet address from tool result — base58 strings trigger language detection.
         return """
         Opening MoonPay sandbox to buy SOL.
-        Wallet: \(publicKey)
         Amount: $\(String(format: "%.0f", arguments.amount ?? 50)) \((arguments.currency ?? "USD").uppercased())
-        
+
         ⚠️ SANDBOX MODE — Use test card: 4242 4242 4242 4242, any future expiry, any CVV.
         This is a demo — no real money will be charged.
         """

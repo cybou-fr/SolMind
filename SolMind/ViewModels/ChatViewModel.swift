@@ -302,17 +302,23 @@ class ChatViewModel {
 
     // MARK: - Streaming with context-window recovery
 
+    /// Runs `collectStream` and converts context-window errors into `AIError.contextWindowExceeded`
+    /// so `sendMessage` can retry with a clean session.
+    ///
+    /// Uses **typed** `LanguageModelSession.GenerationError` matching rather than string matching.
+    /// String matching was fragile: the "generationerror" wildcard accidentally caught
+    /// `.unsupportedLanguageOrLocale` (treating it as recoverable overflow), and broke
+    /// whenever Apple changed error descriptions or localised them.
     private func streamWithRecovery(_ prompt: String) async throws -> String {
         do {
             return try await collectStream(prompt)
         } catch let genError as LanguageModelSession.GenerationError {
-            // Use typed matching — avoids fragile string matching and misrouting.
             switch genError {
             case .exceededContextWindowSize:
                 aiSession.reset()
                 throw AIError.contextWindowExceeded
             case .unsupportedLanguageOrLocale:
-                throw genError  // hard stop, handled in sendMessage
+                throw genError  // hard stop — not recoverable by resetting context
             default:
                 if isContextWindowError(genError) {
                     aiSession.reset()
@@ -329,16 +335,22 @@ class ChatViewModel {
         }
     }
 
+    /// Returns `true` only for errors that represent a context-window overflow.
+    ///
+    /// Design notes:
+    /// - Prefer typed enum matching over string matching for `LanguageModelSession.GenerationError`.
+    /// - Do NOT match bare "exceeded" — it also matches Solana RPC "Rate limit exceeded",
+    ///   which would wrongly reset the AI session on a network error.
+    /// - The old "generationerror" string wildcard was removed: it matched ALL
+    ///   `GenerationError` subtypes including `.unsupportedLanguageOrLocale`, causing
+    ///   locale errors to be silently swallowed and retried as overflow recoveries.
     private func isContextWindowError(_ error: Error) -> Bool {
         if case AIError.contextWindowExceeded = error { return true }
         if let genError = error as? LanguageModelSession.GenerationError {
             if case .exceededContextWindowSize = genError { return true }
-            // Never treat locale/language errors as context overflow.
             if case .unsupportedLanguageOrLocale = genError { return false }
         }
         let text = error.localizedDescription.lowercased()
-        // NOTE: Do NOT check for bare "exceeded" — it also matches Solana "Rate limit exceeded".
-        // Removed "generationerror" wildcard — it was catching ALL GenerationErrors including locale.
         return text.contains("4096")
             || text.contains("context length")
             || text.contains("context window")

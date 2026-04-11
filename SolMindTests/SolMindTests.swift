@@ -1156,3 +1156,185 @@ struct AppSettingsTests {
         #expect(settings.hapticFeedbackEnabled == true)
     }
 }
+
+// MARK: - SolanaKnowledge Prompt Safety Tests
+//
+// REGRESSION SUITE — protects against the base58 locale bug discovered in session 9.
+//
+// Root cause: Apple's on-device language n-gram classifier treats clusters of base58
+// strings (32+ characters from [1-9A-HJ-NP-Za-km-z]) as Catalan, Slovak, Czech, or
+// other minority languages. When FoundationModels detects an unsupported language in
+// the prompt it throws GenerationError.unsupportedLanguageOrLocale, blocking all AI
+// responses. The detected "language" varies per session because different
+// relevantSnippet() sections (each containing different program addresses) are
+// injected, tipping the n-gram classifier toward different languages.
+//
+// Rule: NO raw base58 addresses may appear in any text injected into a
+// LanguageModelSession — not in systemBlock, not in snippets, not in @Guide strings.
+// Address resolution is done exclusively inside tool implementations.
+
+@Suite("SolanaKnowledge — No Base58 in Prompts")
+struct SolanaKnowledgeTests {
+
+    // Detects base58-alphabet strings of 32+ characters (the minimum for a Solana pubkey).
+    // The base58 alphabet excludes 0, O, I, l to avoid visual ambiguity.
+    private func hasBase58(in text: String) -> Bool {
+        text.range(of: "[1-9A-HJ-NP-Za-km-z]{32,}", options: .regularExpression) != nil
+    }
+
+    // MARK: systemBlock
+
+    @Test func systemBlockContainsNoBase58() {
+        #expect(!hasBase58(in: SolanaKnowledge.systemBlock),
+                "systemBlock must not contain raw base58 addresses — they trigger language detection errors")
+    }
+
+    @Test func systemBlockListsSupportedTokenSymbols() {
+        let block = SolanaKnowledge.systemBlock
+        for symbol in ["USDC", "USDT", "BONK", "mSOL", "JUP", "RAY", "EURC"] {
+            #expect(block.contains(symbol), "systemBlock should list token symbol \(symbol)")
+        }
+    }
+
+    @Test func systemBlockListsAllTools() {
+        let block = SolanaKnowledge.systemBlock
+        for tool in ["getBalance", "getFromFaucet", "swapTokens", "mintNFT", "createToken",
+                     "getTransactionHistory", "buyWithFiat", "analyzeProgram"] {
+            #expect(block.contains(tool), "systemBlock should mention tool \(tool)")
+        }
+    }
+
+    @Test func systemBlockMentionsDevnet() {
+        #expect(SolanaKnowledge.systemBlock.contains("devnet"))
+    }
+
+    // MARK: relevantSnippet — no base58
+
+    @Test func stakingSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "how do I stake SOL?") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func nftSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "mint me an nft") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func tokenSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "create a new spl token") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func defiSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "swap on jupiter defi") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func bridgeSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "bridge via wormhole to ethereum") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func governanceSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "squads multisig governance dao") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func securitySnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "how do I protect my private key?") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    @Test func architectureSnippetContainsNoBase58() {
+        let snippet = SolanaKnowledge.relevantSnippet(for: "explain proof of history sealevel architecture") ?? ""
+        #expect(!hasBase58(in: snippet))
+    }
+
+    // MARK: relevantSnippet — routing
+
+    @Test func unmatchedQueryReturnsNil() {
+        #expect(SolanaKnowledge.relevantSnippet(for: "what is the weather today?") == nil)
+        #expect(SolanaKnowledge.relevantSnippet(for: "hello how are you") == nil)
+        #expect(SolanaKnowledge.relevantSnippet(for: "") == nil)
+    }
+
+    @Test func allTriggerQueriesReturnNonNilSnippet() {
+        let queries = [
+            "how to stake mSOL validator",
+            "mint an nft compressed bubblegum",
+            "create token fungible spl deploy",
+            "swap on jupiter amm defi liquidity",
+            "bridge to ethereum wormhole cross-chain",
+            "dao governance squads multisig proposal",
+            "protect my seed phrase phishing scam keychain",
+            "explain proof of history tps parallel sealevel firedancer",
+        ]
+        for q in queries {
+            let snippet = SolanaKnowledge.relevantSnippet(for: q)
+            #expect(snippet != nil, "Expected non-nil snippet for query: \"\(q)\"")
+        }
+    }
+
+    @Test func snippetRoutingIsKeywordDriven() {
+        // "stake" → staking snippet must mention APY and validators
+        let stakingSnippet = SolanaKnowledge.relevantSnippet(for: "how to stake") ?? ""
+        #expect(stakingSnippet.lowercased().contains("apy") || stakingSnippet.lowercased().contains("validator"))
+
+        // "nft" → nft snippet must mention Metaplex or compressed
+        let nftSnippet = SolanaKnowledge.relevantSnippet(for: "what are nfts on solana") ?? ""
+        #expect(nftSnippet.lowercased().contains("metaplex") || nftSnippet.lowercased().contains("compressed"))
+
+        // "bridge" → bridges snippet must mention Wormhole
+        let bridgeSnippet = SolanaKnowledge.relevantSnippet(for: "how to bridge") ?? ""
+        #expect(bridgeSnippet.lowercased().contains("wormhole"))
+    }
+}
+
+// MARK: - AIInstructions System Prompt Contract Tests
+
+@Suite("AIInstructions System Prompt Contract")
+struct AIInstructionsSystemTests {
+
+    private func hasBase58(in text: String) -> Bool {
+        text.range(of: "[1-9A-HJ-NP-Za-km-z]{32,}", options: .regularExpression) != nil
+    }
+
+    @Test func systemPromptContainsNoBase58Addresses() {
+        // The system prompt is injected into every LanguageModelSession. Any base58 address
+        // here would trigger GenerationError.unsupportedLanguageOrLocale on every message.
+        #expect(!hasBase58(in: AIInstructions.system),
+                "AIInstructions.system must not contain raw base58 addresses")
+    }
+
+    @Test func systemPromptMentionsSolMind() {
+        #expect(AIInstructions.system.contains("SolMind"))
+    }
+
+    @Test func systemPromptMentionsDevnet() {
+        #expect(AIInstructions.system.contains("devnet") || AIInstructions.system.contains("DEVNET"))
+    }
+
+    @Test func systemPromptContainsSecurityRule() {
+        let s = AIInstructions.system.lowercased()
+        #expect(s.contains("private key") || s.contains("never") || s.contains("scam"))
+    }
+
+    @Test func systemPromptEmbedsSolanaKnowledgeSystemBlock() {
+        // systemBlock is the routing reference injected via string interpolation.
+        // If it's missing from the system prompt, the AI loses all tool routing context.
+        let blockFragment = "SOLANA/DEVNET FACTS"
+        #expect(AIInstructions.system.contains(blockFragment),
+                "system prompt must embed SolanaKnowledge.systemBlock")
+    }
+
+    @Test func contextBlockDoesNotContainBase58WhenWalletIsShortAddress() {
+        // Short / placeholder addresses (e.g. "addr") must not be flagged — not base58.
+        let result = AIInstructions.contextBlock(
+            walletAddress: "addr",
+            solBalance: 1.0, solUSDValue: nil,
+            tokenBalances: [], statsContext: "",
+            userMessage: "hello"
+        )
+        #expect(!hasBase58(in: result))
+    }
+}

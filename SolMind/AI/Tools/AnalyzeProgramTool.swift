@@ -65,31 +65,42 @@ struct AnalyzeProgramTool: Tool {
             """
     }
 
+    // MARK: - Address Abbreviation
+    //
+    // Full base58 addresses (32–44 chars) in tool results trigger Apple's on-device
+    // language classifier (detected as Catalan, Slovak, etc.) and cause
+    // GenerationError.unsupportedLanguageOrLocale. Abbreviate to first8…last4 (13 chars)
+    // to stay well below the detection threshold while remaining identifiable.
+    private func abbrev(_ address: String) -> String {
+        guard address.count > 13 else { return address }
+        return "\(address.prefix(8))…\(address.suffix(4))"
+    }
+
     // MARK: - On-chain Fetch
 
     private func fetchAndDescribeAccount(address: String) async -> String {
+        let short = abbrev(address)
         do {
             guard let info = try await solanaClient.getAccountInfo(address: address) else {
                 return """
-                    Account `\(address)` was not found on Solana devnet. \
+                    Account \(short) was not found on Solana devnet. \
                     It may not exist yet or may not have been funded.
                     """
             }
 
             var lines: [String] = []
-            lines.append("**Account: `\(address)`**")
+            lines.append("**Account: \(short)**")
             lines.append("")
 
             let sol = Double(info.lamports) / 1_000_000_000
             lines.append("- **Balance:** \(String(format: "%.9f", sol)) SOL (\(info.lamports) lamports)")
             lines.append("- **Type:** \(info.executable ? "Executable program" : "Data / wallet account")")
 
-            // Identify owner
             if let ownerInfo = KnownPrograms.info(for: info.owner) {
-                lines.append("- **Owned by:** \(ownerInfo.name) (`\(info.owner)`)")
+                lines.append("- **Owned by:** \(ownerInfo.name) (\(abbrev(info.owner)))")
                 lines.append("  *\(ownerInfo.description)*")
             } else {
-                lines.append("- **Owned by:** `\(info.owner)`")
+                lines.append("- **Owned by:** \(abbrev(info.owner))")
             }
 
             lines.append("")
@@ -105,7 +116,7 @@ struct AnalyzeProgramTool: Tool {
 
             return lines.joined(separator: "\n")
         } catch {
-            return "Could not fetch account info for `\(address)`: \(error.localizedDescription)"
+            return "Could not fetch account info for \(short): \(error.localizedDescription)"
         }
     }
 
@@ -114,7 +125,7 @@ struct AnalyzeProgramTool: Tool {
     private func formatProgramInfo(_ p: ProgramInfo) -> String {
         var lines: [String] = []
         lines.append("**\(p.name)** [\(p.category)]")
-        lines.append("Address: `\(p.address)`")
+        lines.append("Address: \(abbrev(p.address))")
         lines.append("")
         lines.append(p.description)
         if let website = p.website {
@@ -130,7 +141,7 @@ struct AnalyzeProgramTool: Tool {
         }
         let header = "Found \(programs.count) programs matching \"\(query)\":"
         let body = programs.map { p in
-            "**\(p.name)** [\(p.category)]\n`\(p.address)`\n\(p.description)"
+            "**\(p.name)** [\(p.category)]\n\(abbrev(p.address))\n\(p.description)"
         }.joined(separator: "\n\n")
         return "\(header)\n\n\(body)"
     }

@@ -55,17 +55,16 @@ struct FaucetTool: Tool {
         }
 
         // 4. All providers rate-limited — guide the user to web faucets
+        // Omit full wallet address from tool result — base58 strings trigger language detection.
+        // The user can copy their address from the Portfolio tab.
         return """
-        The devnet faucet is currently rate-limited for your address. Please get SOL from one of these web faucets:
+        The devnet faucet is currently rate-limited. Please get SOL from a web faucet:
 
         • https://faucet.solana.com — Official Solana Foundation faucet
         • https://faucet.quicknode.com/solana/devnet — QuickNode devnet faucet
         • https://solfaucet.com — SolFaucet.com
 
-        For devnet USDC, use Circle's dedicated faucet:
-        • https://faucet.circle.com — Provides devnet USDC (paste your wallet address)
-
-        Your wallet address: \(publicKey)
+        For devnet USDC: https://faucet.circle.com (copy your address from the Portfolio tab).
         """
     }
 }

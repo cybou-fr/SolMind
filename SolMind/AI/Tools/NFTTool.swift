@@ -27,7 +27,7 @@ struct NFTTool: Tool {
             let nfts = try await heliusService.getAssetsByOwner(owner: publicKey)
 
             if nfts.isEmpty {
-                return "No NFTs found in your devnet wallet (\(publicKey)). Try minting some on devnet first."
+                return "No NFTs found in your devnet wallet. Try minting some on devnet first."
             }
 
             let list = nfts.prefix(20).map { nft in

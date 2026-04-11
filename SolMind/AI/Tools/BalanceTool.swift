@@ -50,7 +50,9 @@ struct BalanceTool: Tool {
             } else {
                 let balance = try await solanaClient.getSOLBalance(publicKey: publicKey)
                 let tokenAccounts = try await solanaClient.getTokenAccounts(owner: publicKey)
-                var result = String(format: "SOL balance: %.9f SOL [DEVNET] | Address: %@", balance, publicKey)
+                // Omit full wallet address from tool result — base58 strings trigger
+                // FoundationModels' language detector (detected as Catalan/Slovak/etc.).
+                var result = String(format: "SOL balance: %.9f SOL [DEVNET]", balance)
                 if balance == 0 {
                     result += " | EMPTY WALLET: Call getFromFaucet tool now to fund this wallet with devnet SOL."
                 }

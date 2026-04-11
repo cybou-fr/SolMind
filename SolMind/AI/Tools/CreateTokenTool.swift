@@ -105,21 +105,23 @@ struct CreateTokenTool: Tool {
                 recentBlockhash: blockhash2
             )
         } catch {
-            return "⚠️ PARTIAL: Mint account was created at \(mintKeypair.publicKeyBase58) (tx: \(createSig)) but the token-mint transaction could not be built: \(error.localizedDescription). Do NOT retry the whole createToken flow — the mint address already exists."
+            return "⚠️ PARTIAL: Mint account was created (tx: \(createSig.prefix(12))…) but the token-mint transaction could not be built: \(error.localizedDescription). Do NOT retry the whole createToken flow — the mint address already exists (visible in Portfolio tab)."
         }
 
         let mintSig: String
         do {
             mintSig = try await solanaClient.sendTransaction(serialized: mintTx)
         } catch {
-            return "⚠️ PARTIAL: Mint account was created at \(mintKeypair.publicKeyBase58) (tx: \(createSig)) but minting tokens failed: \(error.localizedDescription). Do NOT call createToken again — inform the user the mint exists but has no supply yet."
+            return "⚠️ PARTIAL: Mint account was created (tx: \(createSig.prefix(12))…) but minting tokens failed: \(error.localizedDescription). Do NOT call createToken again — inform the user the mint exists but has no supply yet (mint visible in Portfolio tab)."
         }
 
         guard mintSig.count >= 80, Base58.decode(mintSig) != nil else {
-            return "⚠️ PARTIAL: Mint-tokens transaction returned an invalid signature. Mint address: \(mintKeypair.publicKeyBase58). Do NOT retry automatically."
+            return "⚠️ PARTIAL: Mint-tokens transaction returned an invalid signature. Do NOT retry automatically."
         }
 
         let mintAddress = mintKeypair.publicKeyBase58
+        // Abbreviate for tool result — full base58 addresses trigger language detection.
+        let mintShort = "\(mintAddress.prefix(8))…\(mintAddress.suffix(4))"
 
         // Persist metadata so Portfolio shows name/symbol instead of raw address.
         AppSettings.shared.registerToken(
@@ -132,7 +134,7 @@ struct CreateTokenTool: Tool {
         return """
         ✅ DEVNET: Token created successfully!
         Name: \(arguments.tokenName) | Symbol: \(arguments.symbol.uppercased()) | Decimals: \(decimals) | Supply: \(formatSupply(supply))
-        Mint: \(mintAddress)
+        Mint: \(mintShort) (full address in Portfolio tab)
         TX(create): \(createSig.prefix(12))… TX(mint): \(mintSig.prefix(12))…
         """
     }
